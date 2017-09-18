@@ -31,7 +31,7 @@ class DataLoader(object):
 
 		# Makes an input queue
 		input_queue = tf.train.slice_input_producer([images,labels],
-													num_epochs = 500,
+													num_epochs = 900,
 		                                            shuffle=True)
 
 		image, label = self.read_images_from_disk(input_queue)
@@ -90,14 +90,15 @@ class DataLoader(object):
 		else:
 			image = tf.to_float(tf.image.resize_images(tf.image.decode_jpeg(image_file),[224,224]))
 
-		image = image/255
+		image = image/255.0
 
-		label = tf.decode_raw(label_file, tf.float32)
+		#label = tf.decode_raw(label_file, tf.float32)
 
 		label = tf.reshape(tf.decode_raw(label_file, tf.float32),[self.image_height,self.image_width,1])
 
-		label = tf.to_float(tf.image.resize_images(label,[224,224]))
-
+		#import pdb;pdb.set_trace()
+		label = tf.image.resize_images(label,[224,224],method = tf.image.ResizeMethod.AREA)
+		label = 1.0/label
 
 		return image, label
 

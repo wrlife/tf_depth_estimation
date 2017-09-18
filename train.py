@@ -28,7 +28,7 @@ flags.DEFINE_integer("validation_check", 100, "Directory name to pretrained weig
 FLAGS = flags.FLAGS
 
 FLAGS.num_scales = 4
-FLAGS.smooth_weight = 1.0
+FLAGS.smooth_weight = 2.0
 
 
 slim = tf.contrib.slim
@@ -42,10 +42,8 @@ def compute_smooth_loss(pred_disp):
 	dx, dy = gradient(pred_disp)
 	dx2, dxdy = gradient(dx)
 	dydx, dy2 = gradient(dy)
-	return tf.reduce_mean(tf.abs(dx2)) + \
-	   tf.reduce_mean(tf.abs(dxdy)) + \
-	   tf.reduce_mean(tf.abs(dydx)) + \
-	   tf.reduce_mean(tf.abs(dy2))
+	smoothout = (tf.reduce_mean(tf.abs(dx2)) + tf.reduce_mean(tf.abs(dxdy)) + tf.reduce_mean(tf.abs(dydx)) + tf.reduce_mean(tf.abs(dy2)))
+	return smoothout
 
 
 def main(_):
@@ -99,7 +97,7 @@ def main(_):
 				curr_depth_error = tf.abs(curr_label - pred_disp[s])
 				pixel_loss += tf.reduce_mean(curr_depth_error)
 
-			total_loss = pixel_loss + smooth_loss
+			total_loss = pixel_loss + smooth_loss 
 
 
 

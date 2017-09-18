@@ -56,14 +56,19 @@ def main(_):
 
 					fh = open(img_list[i],'r')
 					I = pil.open(fh)
-					I = I.resize((224,224),pil.ANTIALIAS)
-					I = np.array(I)/255
+					I = np.array(I)
+					I = cv2.resize(I,(224,224),interpolation = cv2.INTER_AREA)
+					#I = I.resize((224,224),pil.ANTIALIAS)
+					
+					I = I/255.0
 
 					#import pdb;pdb.set_trace()
 
 					pred = sess.run(pred_disp,feed_dict={x:I[None,:,:,:]})
 
-					z=cv2.resize(pred[0][0,:,:,0],(FLAGS.image_width,FLAGS.image_height))
+					#import pdb;pdb.set_trace()
+					z=cv2.resize(1.0/pred[0][0,:,:,0],(FLAGS.image_width,FLAGS.image_height),interpolation = cv2.INTER_AREA)
+					#z=1.0/z#[0][0,:,:,0]
 					z.astype(np.float32).tofile(FLAGS.output_dir+img_list[i].split('/')[-1]+'_z.bin')
 					
 					print("The %dth frame is processed"%(i))
