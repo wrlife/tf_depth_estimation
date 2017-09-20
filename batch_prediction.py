@@ -67,7 +67,8 @@ def main(_):
 					pred = sess.run(pred_disp,feed_dict={x:I[None,:,:,:]})
 
 					#import pdb;pdb.set_trace()
-					z=cv2.resize(1.0/pred[0][0,:,:,0],(FLAGS.image_width,FLAGS.image_height),interpolation = cv2.INTER_AREA)
+					z=cv2.resize(1.0/pred[0][0,:,:,0],(FLAGS.image_width,FLAGS.image_height),interpolation = cv2.INTER_CUBIC)
+					z = cv2.bilateralFilter(z,9,75,75)
 					#z=1.0/z#[0][0,:,:,0]
 					z.astype(np.float32).tofile(FLAGS.output_dir+img_list[i].split('/')[-1]+'_z.bin')
 					
