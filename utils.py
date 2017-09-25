@@ -281,3 +281,12 @@ def bilinear_sampler(imgs, coords):
         w10 * im10, w11 * im11
     ])
     return output
+
+
+
+def solve_scale(static_points,moving_points):
+
+  import pdb;pdb.set_trace()
+  y=0.0
+  #for i in range(length(static_points)):
+    #y = y+(static_points(:,i)-s*moving_points(:,i)).T*(static_points(:,i)-s*moving_points(:,i))

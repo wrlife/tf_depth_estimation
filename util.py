@@ -134,8 +134,8 @@ def get_camera_pose(colmap_file, image_name):
         camera_id = data[0]
 
         R = quaternion_to_rotation_matrix(np.array(map(float, data[1:5]))).T
-        t = -R.dot(np.array(map(float, data[5:8])))
-
+        #t = -R.dot(np.array(map(float, data[5:8])))
+        t = np.array(map(float, data[5:8]))
         break
     else:
       raise Exception('Camera not found!')
