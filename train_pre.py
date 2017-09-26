@@ -7,12 +7,10 @@ import numpy as np
 import tensorflow.contrib.slim.nets
 from tensorflow.contrib.slim.python.slim.learning import train_step
 
-from imageselect_Dataloader_tgt_src import DataLoader
+from imageselect_Dataloader import DataLoader
 import os
 
 from nets import *
-
-from utils import *
 
 flags = tf.app.flags
 flags.DEFINE_string("dataset_dir", "", "Dataset directory")
@@ -20,19 +18,17 @@ flags.DEFINE_string("validate_dir", "./validation", "Dataset directory")
 flags.DEFINE_string("checkpoint_dir", "./checkpoints/", "Directory name to save the checkpoints")
 flags.DEFINE_integer("image_height", 240, "The size of of a sample batch")
 flags.DEFINE_integer("image_width", 720, "The size of of a sample batch")
-flags.DEFINE_float("learning_rate", 0.0002, "Learning rate of for adam")
+flags.DEFINE_float("learning_rate", 0.00002, "Learning rate of for adam")
 flags.DEFINE_float("beta1", 0.9, "Momentum term of adam")
-flags.DEFINE_integer("batch_size", 10, "The size of of a sample batch")
+flags.DEFINE_integer("batch_size", 20, "The size of of a sample batch")
 flags.DEFINE_integer("max_steps", 20000, "Maximum number of training iterations")
 flags.DEFINE_string("pretrain_weight_dir", "./pretrained", "Directory name to pretrained weights")
 flags.DEFINE_integer("validation_check", 100, "Directory name to pretrained weights")
-flags.DEFINE_integer("num_sources", 2, "number of sources")
 
 FLAGS = flags.FLAGS
 
 FLAGS.num_scales = 4
-FLAGS.smooth_weight = 0.5
-FLAGS.data_weight = 0.5
+FLAGS.smooth_weight = 2.0
 
 
 slim = tf.contrib.slim
@@ -68,13 +64,10 @@ def main(_):
 									 FLAGS.batch_size,
 									 FLAGS.image_height, 
 									 FLAGS.image_width,
-									 FLAGS.num_sources,
-									 FLAGS.num_scales,
 									 'train')
-			image, src_image_stack, label, intrinsics, tgt2src_projs = imageloader.load_train_batch()
+			image,label = imageloader.load_train_batch()
 
-
-		#import pdb;pdb.set_trace()
+		import pdb;pdb.set_trace()
 		#============================================
 		#Define the model
 		#============================================
@@ -89,42 +82,22 @@ def main(_):
 		#============================================
 
 		with tf.name_scope("compute_loss"):
-			depth_loss = 0
 			pixel_loss = 0
-			smooth_loss = 0
 
-			curr_proj_image = []
+			smooth_loss = 0
 
 			for s in range(FLAGS.num_scales):
 				smooth_loss += FLAGS.smooth_weight/(2**s) * \
 				    compute_smooth_loss(pred_disp[s])
 
 				curr_label = tf.image.resize_area(label, 
-					[int(224/(2**s)), int(224/(2**s))])
-
-				curr_tgt_image = tf.image.resize_area(image, 
-				    [int(224/(2**s)), int(224/(2**s))])
-
-				curr_src_image_stack = tf.image.resize_area(src_image_stack, 
-				    [int(224/(2**s)), int(224/(2**s))])              
+					[int(224/(2**s)), int(224/(2**s))])                
 
 
 				curr_depth_error = tf.abs(curr_label - pred_disp[s])
-				depth_loss += tf.reduce_mean(curr_depth_error)
+				pixel_loss += tf.reduce_mean(curr_depth_error)
 
-				#import pdb;pdb.set_trace()
-				for i in range(FLAGS.num_sources):
-
-					curr_proj_image.append(projective_inverse_warp(
-					    curr_src_image_stack[:,:,:,3*i:3*(i+1)], 
-					    tf.squeeze(1.0/pred_disp[s], axis=3), 
-					    tgt2src_projs[:,i,:,:],
-						intrinsics[:,s,:,:]
-						))
-					curr_proj_error = tf.abs(curr_proj_image[-1] - curr_tgt_image)
-					pixel_loss += tf.reduce_mean(curr_proj_error)*FLAGS.data_weight/(2**s)
-
-			total_loss =  smooth_loss + depth_loss + pixel_loss
+			total_loss = pixel_loss + smooth_loss 
 
 
 
@@ -135,9 +108,6 @@ def main(_):
 
 		with tf.name_scope("train_op"):
 			tf.summary.scalar('losses/total_loss', total_loss)
-			tf.summary.scalar('losses/total_loss', smooth_loss)
-			tf.summary.scalar('losses/total_loss', depth_loss)
-			tf.summary.scalar('losses/total_loss', pixel_loss)
 
 			# Specify the optimization scheme:
 			optimizer = tf.train.AdamOptimizer(FLAGS.learning_rate,FLAGS.beta1)

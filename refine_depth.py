@@ -27,14 +27,15 @@ flags.DEFINE_string("dataset_dir", "", "Dataset directory")
 flags.DEFINE_string("output_dir", "", "Dataset directory")
 flags.DEFINE_integer("image_height", 240, "The size of of a sample batch")
 flags.DEFINE_integer("image_width", 720, "The size of of a sample batch")
-flags.DEFINE_float("learning_rate", 0.002, "Learning rate of for adam")
+flags.DEFINE_float("learning_rate", 0.00002, "Learning rate of for adam")
 flags.DEFINE_float("beta1", 0.9, "Momentum term of adam")
 
 FLAGS = flags.FLAGS
 FLAGS.num_scales = 4
 FLAGS.smooth_weight = 2
+FLAGS.data_weight = 0.2
 
-FLAGS.checkpoint_dir="./checkpoints"
+FLAGS.checkpoint_dir="./depth_checkpoints"
 
 
 def make_intrinsics_matrix(fx, fy, cx, cy):
@@ -167,7 +168,7 @@ def main(_):
 
 			
 			pred_disp, depth_net_endpoints = disp_net(x1, 
-			                                      is_training=False)
+			                                      is_training=True)
 
 			scale_factor = get_scale_factor(tf_points3D,1.0/pred_disp[0][0,:,:,0],tf_points2D)
 
@@ -198,18 +199,18 @@ def main(_):
 				#import pdb;pdb.set_trace()
 				curr_proj_image.append(projective_inverse_warp(
 				    curr_tgt_image, 
-				    tf.squeeze(1.0/curr_gt_x1_depth,axis=3),
-				    #tf.squeeze(1.0/pred_disp[s], axis=3), 
-				    #tf.matmul(scale_factor,pred_poses), 
-				    pred_poses,
+				    #tf.squeeze(1.0/curr_gt_x1_depth,axis=3),
+				    tf.squeeze(1.0/pred_disp[s], axis=3), 
+				    tf.matmul(pred_poses,scale_factor), 
+				    #pred_poses,
 				    m_stack_intrinsics[:,s,:,:]))
 
 
 				curr_proj_error = tf.abs(curr_src_image - curr_proj_image[s])
-				#curr_depth_error = tf.abs(curr_gt_x1_depth - pred_disp[s])
+				curr_depth_error = tf.abs(curr_gt_x1_depth - scale_factor[0,0,0]*pred_disp[s])
 
 				pixel_loss += tf.reduce_mean(curr_proj_error)
-				#pixel_loss += tf.reduce_mean(curr_depth_error)*FLAGS.smooth_weight
+				pixel_loss += tf.reduce_mean(curr_depth_error)*FLAGS.data_weight/(2**s)
 
 			total_loss = pixel_loss + smooth_loss
 
@@ -285,9 +286,10 @@ def main(_):
 				vmask[i0,j0]=points3D[k,2]
 				mulmask[i0,j0] = 1.0 
 
+
 			z = cv2.resize(z,(224,224),interpolation = cv2.INTER_AREA)
 			z = z[:,:,np.newaxis]
-			z = z/100
+			#z = z/100
 			z = 1.0/z			
 
 
@@ -301,21 +303,23 @@ def main(_):
 						resized_points2D.append([i,j])
 
 			
-			import pdb;pdb.set_trace()
-			z_stack = []
-			points3D_stack = []
-			for i in range(len(resized_points2D)):
-				i0=int(resized_points2D[i][0])
-				j0=int(resized_points2D[i][1])
-				z_stack.append(z[i0,j0])
-				points3D_stack.append(vmask[i0,j0])
+			# import pdb;pdb.set_trace()
+			# z_stack = []
+			# points3D_stack = []
+			# for i in range(len(resized_points2D)):
+			# 	i0=int(resized_points2D[i][0])
+			# 	j0=int(resized_points2D[i][1])
+			# 	z_stack.append(z[i0,j0])
+			# 	points3D_stack.append(vmask[i0,j0])
 
-			import pdb;pdb.set_trace()
-			m_s = np.median(points3D_stack)/np.median(z_stack)
-			scale_m = np.eye(4)
-			scale_m[0,0] = m_s
-			scale_m[1,1] = m_s
-			scale_m[2,2] = m_s
+			# import pdb;pdb.set_trace()
+			# m_s = np.median(points3D_stack)/np.median(z_stack)
+			# scale_m = np.eye(4)
+			# scale_m[0,0] = m_s
+			# scale_m[1,1] = m_s
+			# scale_m[2,2] = m_s
+
+			# #z = m_s*z
 			
 
 			pad = np.array([[0, 0, 0, 1]])
@@ -327,7 +331,6 @@ def main(_):
 			homo2 = np.append(homo2,pad,0)
 
 			src2tgt_proj = np.dot(inv(homo2),homo1)
-
 
 
 			#pred_poses = np.array([src2tgt_proj[0,3],src2tgt_proj[1,3],src2tgt_proj[2,3],])
@@ -354,6 +357,7 @@ def main(_):
 
 				if i>=0 and i%10==0:
 					print('Step %s - Loss: %.2f ' % (i, tmp_total_loss))
+					print('Scale %f' % (tmp_scale[0,0,0]))
 
 				if i == 1:
 
@@ -364,7 +368,15 @@ def main(_):
 					plt.imshow(test[0])
 					plt.show()
 					import pdb;pdb.set_trace()
-				
+				if i == 200:
+
+					test=reproject_img[0]
+					test = test*255
+					test = test.astype(np.uint8)
+
+					plt.imshow(test[0])
+					plt.show()
+					import pdb;pdb.set_trace()				
 
 				#print("The %dth frame is processed"%(i))
 				if i == 500:
