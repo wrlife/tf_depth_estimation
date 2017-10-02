@@ -33,13 +33,13 @@ def main(_):
 
 	with tf.Graph().as_default():
 		#Load image and label
-		x = tf.placeholder(shape=[None, 224, 224, 3], dtype=tf.float32)
+		x = tf.placeholder(shape=[None, 224, 224, 6], dtype=tf.float32)
 
 		img_list = sorted(glob(FLAGS.dataset_dir + '/*.jpg'))
 
 		# # Define the model:
-		#with tf.name_scope("Prediction"):
-		with tf.variable_scope("depth_prediction") as scope:
+		with tf.name_scope("Prediction"):
+		#with tf.variable_scope("depth_prediction") as scope:
 			pred_disp, depth_net_endpoints = disp_net(x, 
 			                                      is_training=False)
 
@@ -52,21 +52,29 @@ def main(_):
 
 				saver.restore(sess, checkpoint)
 
-				for i in range(len(img_list)):
+				for i in range(len(img_list)-1):
 
 					fh = open(img_list[i],'r')
 					I = pil.open(fh)
 					I = np.array(I)
 					I = cv2.resize(I,(224,224),interpolation = cv2.INTER_AREA)
+
+					
+					fh = open(img_list[i+1],'r')
+					I1 = pil.open(fh)
+					I1 = np.array(I1)
+					I1 = cv2.resize(I1,(224,224),interpolation = cv2.INTER_AREA)					
+
+					I = np.concatenate((I,I1),axis=2)
 					#I = I.resize((224,224),pil.ANTIALIAS)
 					
 					I = I/255.0
 
-					#import pdb;pdb.set_trace()
+					import pdb;pdb.set_trace()
 
 					pred = sess.run(pred_disp,feed_dict={x:I[None,:,:,:]})
 
-					import pdb;pdb.set_trace()
+					#import pdb;pdb.set_trace()
 					z=cv2.resize(1.0/pred[0][0,:,:,0],(FLAGS.image_width,FLAGS.image_height),interpolation = cv2.INTER_CUBIC)
 					z = cv2.bilateralFilter(z,9,75,75)
 					#z=1.0/z#[0][0,:,:,0]

@@ -192,7 +192,7 @@ def projective_inverse_warp(img, depth, pose, intrinsics):
   proj_tgt_cam_to_src_pixel = tf.matmul(intrinsics, pose)
   src_pixel_coords = cam2pixel(cam_coords, proj_tgt_cam_to_src_pixel)
   output_img = bilinear_sampler(img, src_pixel_coords)
-  return output_img
+  return output_img,src_pixel_coords
 
 def bilinear_sampler(imgs, coords):
   """Construct a new image by bilinear sampling from the input image.
@@ -290,3 +290,24 @@ def solve_scale(static_points,moving_points):
   y=0.0
   #for i in range(length(static_points)):
     #y = y+(static_points(:,i)-s*moving_points(:,i)).T*(static_points(:,i)-s*moving_points(:,i))
+
+
+
+def depth_optflow(src_pixel_coords):
+  
+  
+  batch, height, width, _ = src_pixel_coords.get_shape().as_list()
+  pixel_coords = meshgrid(batch, height, width,is_homogeneous=False)
+
+
+  
+  pixel_coords = tf.transpose(pixel_coords, [0,2,3,1])
+  coords_x, coords_y = tf.split(pixel_coords, [1, 1], axis=3)
+
+
+  coords_x_src, coords_y_src = tf.split(src_pixel_coords, [1, 1], axis=3)
+
+  optflowx = coords_x_src-coords_x;
+  optflowy = coords_y_src-coords_y;
+
+  return optflowx,optflowy
