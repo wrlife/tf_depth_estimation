@@ -40,8 +40,8 @@ class DataLoader(object):
                                                      depth_paths_queue,
                                                      cam_paths_queue,
                                                      tgt2src_paths_queue],
-                                                    num_epochs = 1500,
-                                                    shuffle=True)
+                                                     num_epochs = 1500,
+                                                     shuffle=True)
 
         image_all, label, intrinsics,tgt2scr_projs = self.read_images_from_disk(input_queue)
 

@@ -20,7 +20,7 @@ flags.DEFINE_string("validate_dir", "./validation", "Dataset directory")
 flags.DEFINE_string("checkpoint_dir", "./checkpoints/", "Directory name to save the checkpoints")
 flags.DEFINE_integer("image_height", 240, "The size of of a sample batch")
 flags.DEFINE_integer("image_width", 720, "The size of of a sample batch")
-flags.DEFINE_float("learning_rate", 0.0002, "Learning rate of for adam")
+flags.DEFINE_float("learning_rate", 0.002, "Learning rate of for adam")
 flags.DEFINE_float("beta1", 0.9, "Momentum term of adam")
 flags.DEFINE_integer("batch_size", 30, "The size of of a sample batch")
 flags.DEFINE_integer("max_steps", 20000, "Maximum number of training iterations")
@@ -31,10 +31,10 @@ flags.DEFINE_integer("num_sources", 2, "number of sources")
 FLAGS = flags.FLAGS
 
 FLAGS.num_scales = 4
-FLAGS.smooth_weight = 5
-FLAGS.data_weight = 5
-FLAGS.optflow_weight = 5
-FLAGS.depth_weight = 10
+FLAGS.smooth_weight = 1
+FLAGS.data_weight = 10
+FLAGS.optflow_weight = 100
+FLAGS.depth_weight = 500
 
 slim = tf.contrib.slim
 resnet_v2 = tf.contrib.slim.nets.resnet_v2
@@ -96,8 +96,8 @@ def main(_):
             pred_depth = [tf.expand_dims(d[:,:,:,0],-1) for d in pred_disp]
             pred_optflow_x = [tf.expand_dims(d[:,:,:,1],-1) for d in pred_disp]
             pred_optflow_y = [tf.expand_dims(d[:,:,:,2],-1) for d in pred_disp]
-
-
+                
+                
         #============================================   
         #Specify the loss function:
         #============================================
@@ -142,10 +142,12 @@ def main(_):
                 #=======
                 curr_proj_image, src_pixel_coords= projective_inverse_warp(
                     curr_image_right, 
-                    tf.squeeze(1.0/pred_depth[s], axis=3), 
+                    tf.squeeze(1.0/pred_depth[s], axis=3),
+                    #tf.squeeze(1.0/curr_label,axis=3), 
                     tgt2src_projs[:,0,:,:],
                     intrinsics[:,s,:,:]
                     )
+
 
                 curr_proj_error = tf.abs(curr_proj_image - curr_image_left)
                 pixel_loss += tf.reduce_mean(curr_proj_error)*FLAGS.data_weight/(2**s)
@@ -155,7 +157,14 @@ def main(_):
                 #Optflow loss
                 #=======
                 #Depth estimate optical flow
-                depth_optflow_x,depth_optflow_y = depth_optflow(src_pixel_coords)
+                curr__gt_proj_image, src_pixel_coords_gt= projective_inverse_warp(
+                    curr_image_right, 
+                    #tf.squeeze(1.0/pred_depth[s], axis=3),
+                    tf.squeeze(1.0/curr_label,axis=3), 
+                    tgt2src_projs[:,0,:,:],
+                    intrinsics[:,s,:,:]
+                    )                
+                depth_optflow_x,depth_optflow_y = depth_optflow(src_pixel_coords_gt)
                 curr_optflow_error = tf.abs(pred_optflow_x[s] - depth_optflow_x)+tf.abs(pred_optflow_y[s] - depth_optflow_y)
                 optflow_loss += tf.reduce_mean(curr_optflow_error)*FLAGS.optflow_weight/(2**s)
                                 
@@ -169,7 +178,75 @@ def main(_):
                 proj_image_all.append(curr_proj_image)
                 proj_error_stack_all.append(curr_proj_error)
 
-            total_loss =  depth_loss + smooth_loss #pixel_loss + depth_loss + smooth_loss  + optflow_loss
+            total_loss =  depth_loss + smooth_loss + optflow_loss + pixel_loss# + depth_loss + smooth_loss  + optflow_loss
+
+
+
+#        #=================================
+#        #Validation
+#        #=================================
+#
+#        with tf.name_scope("validate_loading"):
+#            imageloader = DataLoader(FLAGS.dataset_dir,
+#                                     FLAGS.batch_size,
+#                                     FLAGS.image_height, 
+#                                     FLAGS.image_width,
+#                                     FLAGS.num_sources,
+#                                     FLAGS.num_scales,
+#                                     'val')
+#            image_left_val, image_right_val, label_val, intrinsics_val, tgt2src_projs_val = imageloader.load_train_batch()
+#
+#            img_pair_val = tf.concat([image_left_val, image_right_val], axis=3)
+#            pred_disp_val, depth_net_endpoints_left_val = disp_net(img_pair_val, 
+#                                      is_training=True)
+#            pred_depth_val = [tf.expand_dims(d[:,:,:,0],-1) for d in pred_disp_val]
+#            pred_optflow_x_val = [tf.expand_dims(d[:,:,:,1],-1) for d in pred_disp_val]
+#            pred_optflow_y_val = [tf.expand_dims(d[:,:,:,2],-1) for d in pred_disp_val]
+#            for s in range(FLAGS.num_scales):
+#                #=======
+#                #Smooth loss
+#                #=======
+#                smooth_loss_val += FLAGS.smooth_weight/(2**s) * \
+#                    compute_smooth_loss(1.0/pred_depth_val[s])
+#
+#                curr_label_val = tf.image.resize_area(label_val, 
+#                    [int(224/(2**s)), int(224/(2**s))])
+#                curr_image_left_val = tf.image.resize_area(image_left_val, 
+#                    [int(224/(2**s)), int(224/(2**s))])              
+#                curr_image_right_val = tf.image.resize_area(image_right_val, 
+#                    [int(224/(2**s)), int(224/(2**s))]) 
+#                #=======
+#                #Depth loss
+#                #=======
+#                curr_depth_error = tf.abs(curr_label - pred_depth[s])
+#                depth_loss += tf.reduce_mean(curr_depth_error)*FLAGS.depth_weight/(2**s)
+#                #=======
+#                #Pixel loss
+#                #=======
+#                curr_proj_image, src_pixel_coords= projective_inverse_warp(
+#                    curr_image_right, 
+#                    tf.squeeze(1.0/pred_depth[s], axis=3),
+#                    #tf.squeeze(1.0/curr_label,axis=3), 
+#                    tgt2src_projs[:,0,:,:],
+#                    intrinsics[:,s,:,:]
+#                    )
+#                curr_proj_error = tf.abs(curr_proj_image - curr_image_left)
+#                pixel_loss += tf.reduce_mean(curr_proj_error)*FLAGS.data_weight/(2**s)
+#                #=======
+#                #Optflow loss
+#                #=======
+#                #Depth estimate optical flow
+#                curr__gt_proj_image, src_pixel_coords_gt= projective_inverse_warp(
+#                    curr_image_right, 
+#                    #tf.squeeze(1.0/pred_depth[s], axis=3),
+#                    tf.squeeze(1.0/curr_label,axis=3), 
+#                    tgt2src_projs[:,0,:,:],
+#                    intrinsics[:,s,:,:]
+#                    )                
+#                depth_optflow_x,depth_optflow_y = depth_optflow(src_pixel_coords_gt)
+#                curr_optflow_error = tf.abs(pred_optflow_x[s] - depth_optflow_x)+tf.abs(pred_optflow_y[s] - depth_optflow_y)
+#                optflow_loss += tf.reduce_mean(curr_optflow_error)*FLAGS.optflow_weight/(2**s)
+
 
 
 
