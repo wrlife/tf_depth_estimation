@@ -194,6 +194,24 @@ def projective_inverse_warp(img, depth, pose, intrinsics):
   output_img = bilinear_sampler(img, src_pixel_coords)
   return output_img,src_pixel_coords
 
+def optflow_warp(img,flowx,flowy):
+
+  #import pdb;pdb.set_trace()
+  batch, height, width, _ = img.get_shape().as_list()
+  pixel_coords = meshgrid(batch, height, width,is_homogeneous=False)
+
+  pixel_coords = tf.transpose(pixel_coords, [0,2,3,1])
+  coords_x, coords_y = tf.split(pixel_coords, [1, 1], axis=3)
+
+  x_n = coords_x+flowx
+  y_n = coords_y+flowy
+
+  pixel_coords = tf.concat([x_n, y_n], axis=1)
+  pixel_coords = tf.reshape(pixel_coords, [batch, 2, height, width])
+  src_pixel_coords = tf.transpose(pixel_coords, [0,2,3,1])
+  output_img = bilinear_sampler(img, src_pixel_coords)
+  return output_img
+
 def bilinear_sampler(imgs, coords):
   """Construct a new image by bilinear sampling from the input image.
 

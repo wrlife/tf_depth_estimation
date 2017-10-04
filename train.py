@@ -151,7 +151,7 @@ def main(_):
                 proj_image_stack_all.append(proj_image_stack)
                 proj_error_stack_all.append(proj_error_stack)
 
-            total_loss =  smooth_loss  + pixel_loss #+ depth_loss
+            total_loss =  smooth_loss  +  depth_loss
 
 
 
