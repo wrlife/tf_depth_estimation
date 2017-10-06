@@ -6,7 +6,7 @@ import numpy as np
 
 # Range of disparity/inverse depth values
 DISP_SCALING = 10
-MIN_DISP = 0.01
+MIN_DISP = 0.001
 
 def resize_like(inputs, ref):
     iH, iW = inputs.get_shape()[1], inputs.get_shape()[2]
@@ -119,29 +119,81 @@ def disp_net(tgt_image, is_training=True):
             upcnv4 = slim.conv2d_transpose(icnv5, 128, [3, 3], stride=2, scope='upcnv4')
             i4_in  = tf.concat([upcnv4, cnv3b], axis=3)
             icnv4  = slim.conv2d(i4_in, 128, [3, 3], stride=1, scope='icnv4')
-            disp4  = slim.conv2d(icnv4, 3,   [3, 3], stride=1, 
-                activation_fn=None, normalizer_fn=None, scope='disp4') 
+            disp4  = DISP_SCALING * slim.conv2d(icnv4, 1,   [3, 3], stride=1, 
+                activation_fn=tf.sigmoid, normalizer_fn=None, scope='disp4') + MIN_DISP
             disp4_up = tf.image.resize_bilinear(disp4, [np.int(H/4), np.int(W/4)])
 
             upcnv3 = slim.conv2d_transpose(icnv4, 64,  [3, 3], stride=2, scope='upcnv3')
             i3_in  = tf.concat([upcnv3, cnv2b, disp4_up], axis=3)
             icnv3  = slim.conv2d(i3_in, 64,  [3, 3], stride=1, scope='icnv3')
-            disp3  = slim.conv2d(icnv3, 3,   [3, 3], stride=1, 
-                activation_fn=None, normalizer_fn=None, scope='disp3')
+            disp3  = DISP_SCALING * slim.conv2d(icnv3, 1,   [3, 3], stride=1, 
+                activation_fn=tf.sigmoid, normalizer_fn=None, scope='disp3') + MIN_DISP
             disp3_up = tf.image.resize_bilinear(disp3, [np.int(H/2), np.int(W/2)])
 
             upcnv2 = slim.conv2d_transpose(icnv3, 32,  [3, 3], stride=2, scope='upcnv2')
             i2_in  = tf.concat([upcnv2, cnv1b, disp3_up], axis=3)
             icnv2  = slim.conv2d(i2_in, 32,  [3, 3], stride=1, scope='icnv2')
-            disp2  = slim.conv2d(icnv2, 3,   [3, 3], stride=1, 
-                activation_fn=None, normalizer_fn=None, scope='disp2')
+            disp2  = DISP_SCALING * slim.conv2d(icnv2, 1,   [3, 3], stride=1, 
+                activation_fn=tf.sigmoid, normalizer_fn=None, scope='disp2') + MIN_DISP
             disp2_up = tf.image.resize_bilinear(disp2, [H, W])
 
             upcnv1 = slim.conv2d_transpose(icnv2, 16,  [3, 3], stride=2, scope='upcnv1')
             i1_in  = tf.concat([upcnv1, disp2_up], axis=3)
             icnv1  = slim.conv2d(i1_in, 16,  [3, 3], stride=1, scope='icnv1')
-            disp1  = slim.conv2d(icnv1, 3,   [3, 3], stride=1, 
-                activation_fn=None, normalizer_fn=None, scope='disp1')
+            disp1  = DISP_SCALING * slim.conv2d(icnv1, 1,   [3, 3], stride=1, 
+                activation_fn=tf.sigmoid, normalizer_fn=None, scope='disp1') + MIN_DISP
+
+
+
+            #OPTflow
+
+            upcnv7_opt = slim.conv2d_transpose(cnv7b, 512, [3, 3], stride=2, scope='upcnv7_opt')
+            # There might be dimension mismatch due to uneven down/up-sampling
+            upcnv7_opt = resize_like(upcnv7_opt, cnv6b)
+            i7_in_opt  = tf.concat([upcnv7_opt, cnv6b], axis=3)
+            icnv7_opt  = slim.conv2d(i7_in_opt, 512, [3, 3], stride=1, scope='icnv7_opt')
+
+            upcnv6_opt = slim.conv2d_transpose(icnv7_opt, 512, [3, 3], stride=2, scope='upcnv6_opt')
+            upcnv6_opt = resize_like(upcnv6_opt, cnv5b)
+            i6_in_opt  = tf.concat([upcnv6_opt, cnv5b], axis=3)
+            icnv6_opt  = slim.conv2d(i6_in_opt, 512, [3, 3], stride=1, scope='icnv6_opt_opt')
+
+            upcnv5_opt = slim.conv2d_transpose(icnv6_opt, 256, [3, 3], stride=2, scope='upcnv5_opt')
+            upcnv5_opt = resize_like(upcnv5_opt, cnv4b)
+            i5_in_opt  = tf.concat([upcnv5_opt, cnv4b], axis=3)
+            icnv5_opt  = slim.conv2d(i5_in_opt, 256, [3, 3], stride=1, scope='icnv5_opt')
+
+            upcnv4_opt = slim.conv2d_transpose(icnv5_opt, 128, [3, 3], stride=2, scope='upcnv4_opt')
+            i4_in_opt  = tf.concat([upcnv4_opt, cnv3b], axis=3)
+            icnv4_opt  = slim.conv2d(i4_in_opt, 128, [3, 3], stride=1, scope='icnv4_opt')
+            disp4_opt  = slim.conv2d(icnv4_opt, 2,   [3, 3], stride=1, 
+                activation_fn=None, normalizer_fn=None, scope='disp4_opt') 
+            disp4_up_opt = tf.image.resize_bilinear(disp4_opt, [np.int(H/4), np.int(W/4)])
+
+            upcnv3_opt = slim.conv2d_transpose(icnv4_opt, 64,  [3, 3], stride=2, scope='upcnv3_opt')
+            i3_in_opt  = tf.concat([upcnv3_opt, cnv2b, disp4_up_opt], axis=3)
+            icnv3_opt  = slim.conv2d(i3_in_opt, 64,  [3, 3], stride=1, scope='icnv3_opt')
+            disp3_opt  = slim.conv2d(icnv3_opt, 2,   [3, 3], stride=1, 
+                activation_fn=None, normalizer_fn=None, scope='disp3_opt')
+            disp3_up_opt = tf.image.resize_bilinear(disp3_opt, [np.int(H/2), np.int(W/2)])
+
+            upcnv2_opt = slim.conv2d_transpose(icnv3_opt, 32,  [3, 3], stride=2, scope='upcnv2_opt')
+            i2_in_opt  = tf.concat([upcnv2_opt, cnv1b, disp3_up_opt], axis=3)
+            icnv2_opt  = slim.conv2d(i2_in_opt, 32,  [3, 3], stride=1, scope='icnv2_opt')
+            disp2_opt  = slim.conv2d(icnv2_opt, 2,   [3, 3], stride=1, 
+                activation_fn=None, normalizer_fn=None, scope='disp2_opt')
+            disp2_up_opt = tf.image.resize_bilinear(disp2_opt, [H, W])
+
+            upcnv1_opt = slim.conv2d_transpose(icnv2_opt, 16,  [3, 3], stride=2, scope='upcnv1_opt')
+            i1_in_opt  = tf.concat([upcnv1_opt, disp2_up_opt], axis=3)
+            icnv1_opt  = slim.conv2d(i1_in_opt, 16,  [3, 3], stride=1, scope='icnv1_opt')
+            disp1_opt  = slim.conv2d(icnv1_opt, 2,   [3, 3], stride=1, 
+                activation_fn=None, normalizer_fn=None, scope='disp1_opt')
+
+
+
+
+
             
             end_points = utils.convert_collection_to_dict(end_points_collection)
-            return [disp1, disp2, disp3, disp4], end_points
+            return [disp1, disp2, disp3, disp4, disp1_opt, disp2_opt, disp3_opt, disp4_opt], end_points

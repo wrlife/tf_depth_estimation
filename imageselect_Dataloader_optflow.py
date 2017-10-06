@@ -21,6 +21,8 @@ class DataLoader(object):
         self.split=split
         self.num_source = num_source
         self.num_scales = num_scales
+        self.resizedheight = 224
+        self.resizedwidth = 480
 
 
     def load_train_batch(self):
@@ -54,7 +56,7 @@ class DataLoader(object):
 
 
         intrinsics = self.get_multi_scale_intrinsics(
-            intrinsics, self.num_scales,224.0/self.image_width,224.0/self.image_height)
+            intrinsics, self.num_scales,tf.cast(self.resizedwidth,tf.float32)/self.image_width,tf.cast(self.resizedheight,tf.float32)/self.image_height)
         
         #import pdb;pdb.set_trace()
         return tgt_image, src_image_stack, label_batch, intrinsics,tgt2scr_projs
@@ -112,15 +114,15 @@ class DataLoader(object):
         #Image
         #=====================
         if(self.split=="validate"):
-            image_seq = tf.to_float(tf.image.resize_images(tf.image.decode_jpeg(image_file),[224,224*2]))
+            image_seq = tf.to_float(tf.image.resize_images(tf.image.decode_jpeg(image_file),[self.resizedheight,self.resizedwidth*2]))
         else:
-            image_seq = tf.to_float(tf.image.resize_images(tf.image.decode_jpeg(image_file),[224,224*2]))
+            image_seq = tf.to_float(tf.image.resize_images(tf.image.decode_jpeg(image_file),[self.resizedheight,self.resizedwidth*2]))
             #image_seq = tf.to_float(tf.image.decode_jpeg(image_file))
 
-        image_seq = image_seq/255.0
+        #image_seq = image_seq/255.0
         tgt_image, src_image_stack = \
             self.unpack_image_sequence(
-                image_seq, 224, 224, self.num_source)
+                image_seq, self.resizedheight, self.resizedwidth, self.num_source)
         image_all = tf.concat([tgt_image, src_image_stack], axis=2)
 
         #=====================
@@ -129,10 +131,10 @@ class DataLoader(object):
         label = tf.reshape(tf.decode_raw(label_file, tf.float32),[self.image_height,self.image_width,1])
 
         #import pdb;pdb.set_trace()
-        label = tf.image.resize_images(label,[224,224],method = tf.image.ResizeMethod.AREA)
+        label = tf.image.resize_images(label,[self.resizedheight,self.resizedwidth],method = tf.image.ResizeMethod.AREA)
         label = 1.0/label
 
-        label.set_shape([224,224, 1])
+        label.set_shape([self.resizedheight,self.resizedwidth, 1])
 
         #=====================
         #Intrinsic camera

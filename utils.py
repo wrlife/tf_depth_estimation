@@ -191,8 +191,8 @@ def projective_inverse_warp(img, depth, pose, intrinsics):
   # pixel frame.
   proj_tgt_cam_to_src_pixel = tf.matmul(intrinsics, pose)
   src_pixel_coords = cam2pixel(cam_coords, proj_tgt_cam_to_src_pixel)
-  output_img = bilinear_sampler(img, src_pixel_coords)
-  return output_img,src_pixel_coords
+  output_img,wmask = bilinear_sampler(img, src_pixel_coords)
+  return output_img,src_pixel_coords,wmask
 
 def optflow_warp(img,flowx,flowy):
 
@@ -209,7 +209,7 @@ def optflow_warp(img,flowx,flowy):
   pixel_coords = tf.concat([x_n, y_n], axis=1)
   pixel_coords = tf.reshape(pixel_coords, [batch, 2, height, width])
   src_pixel_coords = tf.transpose(pixel_coords, [0,2,3,1])
-  output_img = bilinear_sampler(img, src_pixel_coords)
+  output_img,_ = bilinear_sampler(img, src_pixel_coords)
   return output_img
 
 def bilinear_sampler(imgs, coords):
@@ -298,7 +298,10 @@ def bilinear_sampler(imgs, coords):
         w00 * im00, w01 * im01,
         w10 * im10, w11 * im11
     ])
-    return output
+
+    wmask = w00+w01+w10+w11
+
+    return output,wmask
 
 
 
