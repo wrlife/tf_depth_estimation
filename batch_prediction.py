@@ -24,7 +24,7 @@ flags.DEFINE_integer("image_width", 720, "The size of of a sample batch")
 
 FLAGS = flags.FLAGS
 
-FLAGS.checkpoint_dir="./checkpoints"
+FLAGS.checkpoint_dir="./checkpoints_first_try"
 
 def main(_):
 
@@ -33,7 +33,7 @@ def main(_):
 
 	with tf.Graph().as_default():
 		#Load image and label
-		x = tf.placeholder(shape=[None, 224, 224, 3], dtype=tf.float32)
+		x = tf.placeholder(shape=[None, 240, 720, 3], dtype=tf.float32)
 
 		img_list = sorted(glob(FLAGS.dataset_dir + '/*.jpg'))
 
