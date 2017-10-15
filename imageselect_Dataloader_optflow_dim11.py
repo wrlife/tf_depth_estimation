@@ -36,23 +36,23 @@ class DataLoader(object):
         depth_paths_queue = tf.convert_to_tensor(file_list['gt_depth_file_list'], dtype=tf.string)
         cam_paths_queue = tf.convert_to_tensor(file_list['cam_file_list'], dtype=tf.string)
         tgt2src_paths_queue = tf.convert_to_tensor(file_list['tgt2src_proj_list'], dtype=tf.string)
-        #optflow_queue = tf.convert_to_tensor(file_list['optflow_list'], dtype=tf.string)
+        optflow_queue = tf.convert_to_tensor(file_list['optflow_list'], dtype=tf.string)
         # Makes an input queue
         input_queue = tf.train.slice_input_producer([image_paths_queue,
                                                      depth_paths_queue,
                                                      cam_paths_queue,
-                                                     tgt2src_paths_queue],
-                                                     #optflow_queue],
+                                                     tgt2src_paths_queue,
+                                                     optflow_queue],
                                                      num_epochs = 1500,
                                                      shuffle=True)
 
-        image_all, label, intrinsics,tgt2scr_projs,m_scale = self.read_images_from_disk(input_queue)
+        image_all, label, intrinsics,tgt2scr_projs,optflow,m_scale = self.read_images_from_disk(input_queue)
 
 
 
         # Form training batches
-        src_image_stack, tgt_image ,label_batch,  intrinsics, tgt2scr_projs,m_scale_stack  = \
-                tf.train.batch([image_all[ :, :, 3:], image_all[ :, :, :3], label, intrinsics, tgt2scr_projs,m_scale], 
+        src_image_stack, tgt_image ,label_batch,  intrinsics, tgt2scr_projs,optflow_stack,m_scale_stack  = \
+                tf.train.batch([image_all[ :, :, 3:], image_all[ :, :, :3], label, intrinsics, tgt2scr_projs,optflow,m_scale], 
                                batch_size=self.batch_size)
 
 
@@ -60,7 +60,7 @@ class DataLoader(object):
             intrinsics, self.num_scales,tf.cast(self.resizedwidth,tf.float32)/self.image_width,tf.cast(self.resizedheight,tf.float32)/self.image_height)
         
         #import pdb;pdb.set_trace()
-        return tgt_image, src_image_stack, label_batch, intrinsics,tgt2scr_projs,m_scale_stack
+        return tgt_image, src_image_stack, label_batch, intrinsics,tgt2scr_projs,optflow_stack,m_scale_stack
     
 
     def read_labeled_image_list(self):
@@ -88,15 +88,15 @@ class DataLoader(object):
         tgt2src_proj_list = [os.path.join(self.dataset_dir, subfolders[i], 
             frame_ids[i] + '_tgt2src_proj.txt') for i in range(len(frames))]
 
-        # optflow_list = [os.path.join(self.dataset_dir, subfolders[i], 
-        #     frame_ids[i] + '.flo.flo') for i in range(len(frames))]        
+        optflow_list = [os.path.join(self.dataset_dir, subfolders[i], 
+            frame_ids[i] + '.flo.flo') for i in range(len(frames))]        
 
         all_list = {}
         all_list['image_file_list'] = image_file_list
         all_list['cam_file_list'] = cam_file_list
         all_list['gt_depth_file_list'] = gt_depth_file_list
         all_list['tgt2src_proj_list'] = tgt2src_proj_list
-        #all_list['optflow_list'] = optflow_list
+        all_list['optflow_list'] = optflow_list
 
         return all_list
 
@@ -115,7 +115,7 @@ class DataLoader(object):
         label_file = tf.read_file(input_queue[1])
         cam_file = tf.read_file(input_queue[2])
         tgt2src_proj_file = tf.read_file(input_queue[3]) 
-        #optflow_file = tf.read_file(input_queue[4])      
+        optflow_file = tf.read_file(input_queue[4])      
 
         #=====================
         #Image
@@ -148,9 +148,9 @@ class DataLoader(object):
         #Optflow
         #=====================
 
-        # optflow = tf.reshape(tf.decode_raw(optflow_file, tf.float32),[self.image_height,self.image_width,2])
-        # #optflow = tf.image.resize_images(optflow,[self.resizedheight,self.resizedwidth],method = tf.image.ResizeMethod.AREA)
-        # optflow.set_shape([self.resizedheight,self.resizedwidth, 2])
+        optflow = tf.reshape(tf.decode_raw(optflow_file, tf.float32),[self.image_height,self.image_width,2])
+        #optflow = tf.image.resize_images(optflow,[self.resizedheight,self.resizedwidth],method = tf.image.ResizeMethod.AREA)
+        optflow.set_shape([self.resizedheight,self.resizedwidth, 2])
 
 
         #=====================
@@ -180,7 +180,7 @@ class DataLoader(object):
         raw_tgt2src_vec = raw_tgt2src_vec[:-1]
         tgt2scr_projs = tf.reshape(raw_tgt2src_vec, [2, 4, 4])
 
-        return image_all, label, intrinsics,tgt2scr_projs,m_scale
+        return image_all, label, intrinsics,tgt2scr_projs,optflow,m_scale
 
 
     def data_augmentation(self, im, out_h, out_w):

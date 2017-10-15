@@ -13,7 +13,7 @@ import tensorflow.contrib.slim.nets
 from imageselect_Dataloader import DataLoader
 import os
 
-from nets import *
+from nets_optflow_depth import *
 
 
 flags = tf.app.flags
@@ -24,7 +24,7 @@ flags.DEFINE_integer("image_width", 720, "The size of of a sample batch")
 
 FLAGS = flags.FLAGS
 
-FLAGS.checkpoint_dir="./checkpoints_first_try"
+FLAGS.checkpoint_dir="./checkpoints_single_frame_predict"
 
 def main(_):
 
@@ -39,14 +39,16 @@ def main(_):
 
 		# # Define the model:
 		#with tf.name_scope("Prediction"):
-		with tf.variable_scope("depth_prediction") as scope:
-			pred_disp, depth_net_endpoints = disp_net(x, 
-			                                      is_training=False)
+		with tf.variable_scope("model") as scope:
+			with tf.name_scope("depth_prediction"):
+
+				pred_disp, depth_net_endpoints = depth_net(x, 
+				                                      is_training=False)
 
 
-			saver = tf.train.Saver([var for var in tf.model_variables()])
-			#import pdb;pdb.set_trace()
-			checkpoint = tf.train.latest_checkpoint(FLAGS.checkpoint_dir)
+				saver = tf.train.Saver([var for var in tf.model_variables()])
+				#import pdb;pdb.set_trace()
+				checkpoint = tf.train.latest_checkpoint(FLAGS.checkpoint_dir)
 
 			with tf.Session() as sess:
 
@@ -57,17 +59,17 @@ def main(_):
 					fh = open(img_list[i],'r')
 					I = pil.open(fh)
 					I = np.array(I)
-					I = cv2.resize(I,(224,224),interpolation = cv2.INTER_AREA)
+					#I = cv2.resize(I,(240,720),interpolation = cv2.INTER_AREA)
 					#I = I.resize((224,224),pil.ANTIALIAS)
 					
-					I = I/255.0
+					#I = I/255.0
 
+					
 					#import pdb;pdb.set_trace()
-
 					pred = sess.run(pred_disp,feed_dict={x:I[None,:,:,:]})
 
-					import pdb;pdb.set_trace()
-					z=cv2.resize(1.0/pred[0][0,:,:,0],(FLAGS.image_width,FLAGS.image_height),interpolation = cv2.INTER_CUBIC)
+					
+					z=cv2.resize(pred[0][0,:,:,0],(FLAGS.image_width,FLAGS.image_height),interpolation = cv2.INTER_CUBIC)
 					z = cv2.bilateralFilter(z,9,75,75)
 					#z=1.0/z#[0][0,:,:,0]
 					z.astype(np.float32).tofile(FLAGS.output_dir+img_list[i].split('/')[-1]+'_z.bin')

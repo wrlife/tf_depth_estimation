@@ -91,7 +91,7 @@ def main(_):
                     #flow=np.fromfile(FLAGS.dataset_dir+'/2342_2373.flo.flo', dtype=np.float32).reshape( I1.shape[0],I1.shape[1],2)
                     flow = util.readFlow(FLAGS.dataset_dir+'/z.flo')
 
-                    #flow = np.zeros_like(flow)
+                    flow = np.zeros_like(flow)
 
                     x_coord = np.repeat(np.reshape(np.linspace(0, I1.shape[1]-1, I1.shape[1]),[1,I1.shape[1]]),I1.shape[0],0)
                     y_coord = np.repeat(np.reshape(np.linspace(0, I1.shape[0]-1, I1.shape[0]),[I1.shape[0],1]),I1.shape[1],1)
@@ -109,13 +109,19 @@ def main(_):
                     I = I.astype(np.float32)
                     I1 = I1.astype(np.float32)
                     
+                    I_warp = np.zeros_like(I1)
+                    I1 = np.zeros_like(I1)
+                    #I = np.zeros_like(I1)
+                    inputdata = np.concatenate([flow,I,I_warp,I1],axis=2)
 
-                    inputdata = np.concatenate([I,I1,flow,I_warp],axis=2)
+                    pred,test = sess.run([pred_disp,tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'model/depth_net/cnv1/weights:0')],feed_dict={x:inputdata[None,:,:,:]})
+                    #test = np.asarray(pred[4])
+                    #import pdb;pdb.set_trace()
+                    
 
-                    pred = sess.run(pred_disp,feed_dict={x:inputdata[None,:,:,:]})
 
                     #import pdb;pdb.set_trace()
-                    z = np.flipud(pred[0][0,:,:,:])
+                    z = pred[0][0,:,:,:]
                     #z=cv2.resize(pred[0][0,:,:,:],(FLAGS.image_width,FLAGS.image_height),interpolation = cv2.INTER_CUBIC)
                     #z = cv2.bilateralFilter(z,9,75,75)
                     #z=1.0/z#[0][0,:,:,0]

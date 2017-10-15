@@ -7,7 +7,7 @@ import numpy as np
 import tensorflow.contrib.slim.nets
 from tensorflow.contrib.slim.python.slim.learning import train_step
 
-from imageselect_Dataloader_optflow import DataLoader
+from imageselect_Dataloader_optflow_dim11 import DataLoader
 import os
 
 from nets_optflow_depth import *
@@ -81,7 +81,7 @@ def main(_):
                                      FLAGS.num_sources,
                                      FLAGS.num_scales,
                                      'train')
-            image_left, image_right, label, intrinsics, tgt2src_projs,m_scale = imageloader.load_train_batch()
+            image_left, image_right, label, intrinsics, tgt2src_projs,optflow,m_scale = imageloader.load_train_batch()
 
 
         #============================================
@@ -95,17 +95,17 @@ def main(_):
 
                 #import pdb;pdb.set_trace()
                 #Maybe also add optflow warped image
-                # proj_image_optflow= optflow_warp(
-                #     image_right, 
-                #     tf.expand_dims(optflow[:,:,:,0],-1),
-                #     tf.expand_dims(optflow[:,:,:,1],-1)
-                #     )
+                proj_image_optflow= optflow_warp(
+                    image_right, 
+                    tf.expand_dims(optflow[:,:,:,0],-1),
+                    tf.expand_dims(optflow[:,:,:,1],-1)
+                    )
 
 
                 #concatenate left and right image
-                #img_pair = tf.concat([image_left, image_right, optflow, proj_image_optflow], axis=3)
+                img_pair = tf.concat([ optflow, image_left, proj_image_optflow,image_right], axis=3)
                 #estimate both depth and optical flow of the left image
-                pred_disp, depth_net_endpoints_left = depth_net(image_left, 
+                pred_disp, depth_net_endpoints_left = depth_net(img_pair, 
                                                       is_training=True)
 
                 pred_depth = pred_disp
@@ -119,20 +119,20 @@ def main(_):
                                         FLAGS.num_scales,
                                         'val')
 
-                image_left_val, image_right_val, label_val, intrinsics_val, tgt2src_projs_val,m_scale_val = imageloader_val.load_train_batch()
+                image_left_val, image_right_val, label_val, intrinsics_val, tgt2src_projs_val,optflow_val,m_scale_val = imageloader_val.load_train_batch()
 
-                # proj_image_optflow_val= optflow_warp(
-                #                                 image_right_val, 
-                #                                 tf.expand_dims(optflow_val[:,:,:,0],-1),
-                #                                 tf.expand_dims(optflow_val[:,:,:,1],-1)
-                #                                 )
+                proj_image_optflow_val= optflow_warp(
+                                                image_right_val, 
+                                                tf.expand_dims(optflow_val[:,:,:,0],-1),
+                                                tf.expand_dims(optflow_val[:,:,:,1],-1)
+                                                )
 
                 #concatenate left and right image
-                #img_pair_val = tf.concat([image_left_val, image_right_val, optflow_val, proj_image_optflow_val], axis=3)
+                img_pair_val = tf.concat([image_left_val, image_right_val, optflow_val, proj_image_optflow_val], axis=3)
                 #estimate both depth and optical flow of the left image
 
                 scope.reuse_variables()
-                pred_disp_val, depth_net_endpoints_left = depth_net(image_left_val, 
+                pred_disp_val, depth_net_endpoints_left = depth_net(img_pair_val, 
                                                   is_training=False)
 
                 pred_depth_val = pred_disp_val
@@ -173,6 +173,9 @@ def main(_):
                     [int(FLAGS.resizedheight/(2**s)), int(FLAGS.resizedwidth/(2**s))])              
                 # curr_image_right = tf.image.resize_area(image_right, 
                 #     [int(FLAGS.resizedheight/(2**s)), int(FLAGS.resizedwidth/(2**s))]) 
+
+
+
 
                 #=======
                 #Depth loss
@@ -323,17 +326,20 @@ def main(_):
             tf.summary.scalar('losses/depth_loss', depth_loss)
             # tf.summary.scalar('losses/pixel_loss', pixel_loss)
 
+
+            tf.contrib.layers.summarize_collection(tf.GraphKeys.TRAINABLE_VARIABLES)
+
             # tf.summary.image('optflow_project_image', \
             #                  proj_image_optflow)
-            #import pdb;pdb.set_trace()
-            for s in range(FLAGS.num_scales):
+            # #import pdb;pdb.set_trace()
+            # for s in range(FLAGS.num_scales):
                 
-                tf.summary.image('scale%d_left_image' % s, \
-                                 left_image_all[s])
+            #     tf.summary.image('scale%d_left_image' % s, \
+            #                      left_image_all[s])
 
 
-                tf.summary.image('scale%d_pred_depth' % s,
-                    pred_depth[s])
+            #     tf.summary.image('scale%d_pred_depth' % s,
+            #         pred_depth[s])
 
                 # tf.summary.image('scale%d_projected_image_left_depth' % s, \
                 #     proj_image_all[s])
@@ -358,8 +364,8 @@ def main(_):
                 if train_step_fn.step % FLAGS.validation_check == 0:
                     #accuracy = session.run(train_step_fn.accuracy_validation)
 
-                    total_loss_val = session.run(train_step_fn.total_loss_val)
-                    print('Step %s - Loss: %f ' % (str(train_step_fn.step).rjust(6, '0'), total_loss_val))
+                    #total_loss_val = session.run(train_step_fn.total_loss_val)
+                    print('Step %s - Loss: %f ' % (str(train_step_fn.step).rjust(6, '0'), total_loss))
 
                 train_step_fn.step += 1
 
