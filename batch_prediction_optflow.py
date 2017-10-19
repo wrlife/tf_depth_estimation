@@ -16,6 +16,8 @@ import os
 from nets_optflow_depth import *
 import util
 
+slim = tf.contrib.slim
+resnet_v2 = tf.contrib.slim.nets.resnet_v2
 
 flags = tf.app.flags
 flags.DEFINE_string("dataset_dir", "", "Dataset directory")
@@ -44,11 +46,24 @@ def main(_):
 
         # # Define the model:
         with tf.variable_scope("model") as scope:
-            with tf.name_scope("Prediction"):
+            with tf.name_scope("depth_prediction"):
             #with tf.variable_scope("depth_prediction") as scope:
 
-                pred_disp, depth_net_endpoints = depth_net(x, 
-                                                      is_training=False)
+                # pred_disp, depth_net_endpoints = depth_net(x, 
+                #                                       is_training=False)
+
+                predictions, end_points = resnet_v2.resnet_v2_50(x,
+                                                          global_pool=False,
+                                                          is_training=False
+                                                          )
+
+                multilayer = [end_points['model/resnet_v2_50/block4'], 
+                              end_points['model/resnet_v2_50/block2'],
+                              end_points['model/resnet_v2_50/block1'],
+                              end_points['model/depth_prediction/resnet_v2_50/block1/unit_3/bottleneck_v2/conv1'],
+                              end_points['model/depth_prediction/resnet_v2_50/conv1']]
+
+                pred_disp = upconvolution_net(multilayer,is_training=False)
 
 
                 saver = tf.train.Saver([var for var in tf.model_variables()])
@@ -91,7 +106,7 @@ def main(_):
                     #flow=np.fromfile(FLAGS.dataset_dir+'/2342_2373.flo.flo', dtype=np.float32).reshape( I1.shape[0],I1.shape[1],2)
                     flow = util.readFlow(FLAGS.dataset_dir+'/z.flo')
 
-                    flow = np.zeros_like(flow)
+                    #flow = np.zeros_like(flow)
 
                     x_coord = np.repeat(np.reshape(np.linspace(0, I1.shape[1]-1, I1.shape[1]),[1,I1.shape[1]]),I1.shape[0],0)
                     y_coord = np.repeat(np.reshape(np.linspace(0, I1.shape[0]-1, I1.shape[0]),[I1.shape[0],1]),I1.shape[1],1)
@@ -109,14 +124,18 @@ def main(_):
                     I = I.astype(np.float32)
                     I1 = I1.astype(np.float32)
                     
-                    I_warp = np.zeros_like(I1)
-                    I1 = np.zeros_like(I1)
+                    #I_warp = np.zeros_like(I1)
+                    #I1 = np.zeros_like(I1)
                     #I = np.zeros_like(I1)
                     inputdata = np.concatenate([flow,I,I_warp,I1],axis=2)
 
-                    pred,test = sess.run([pred_disp,tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'model/depth_net/cnv1/weights:0')],feed_dict={x:inputdata[None,:,:,:]})
+
+
+
+
+                    pred = sess.run([pred_disp],feed_dict={x:inputdata[None,:,:,:]})
                     #test = np.asarray(pred[4])
-                    #import pdb;pdb.set_trace()
+                    import pdb;pdb.set_trace()
                     
 
 

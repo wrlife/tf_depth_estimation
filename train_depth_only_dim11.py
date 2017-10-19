@@ -103,39 +103,64 @@ def main(_):
 
 
                 #concatenate left and right image
-                img_pair = tf.concat([ optflow, image_left, proj_image_optflow,image_right], axis=3)
+                img_pair = tf.concat([image_left, image_right,  optflow , proj_image_optflow,], axis=3)
                 #estimate both depth and optical flow of the left image
-                pred_disp, depth_net_endpoints_left = depth_net(img_pair, 
-                                                      is_training=True)
+                
 
-                pred_depth = pred_disp
+                # pred_disp, depth_net_endpoints_left = depth_net(img_pair,
+                #                                       
+                #                                       is_training=True)
 
-            with tf.name_scope("validate_loading"):
-                imageloader_val = DataLoader(FLAGS.dataset_dir,
-                                        1,
-                                        FLAGS.image_height, 
-                                        FLAGS.image_width,
-                                        FLAGS.num_sources,
-                                        FLAGS.num_scales,
-                                        'val')
+                
+                predictions, end_points = resnet_v2.resnet_v2_50(img_pair,
+                                                          global_pool=False,
+                                                          is_training=True
+                                                          )
 
-                image_left_val, image_right_val, label_val, intrinsics_val, tgt2src_projs_val,optflow_val,m_scale_val = imageloader_val.load_train_batch()
 
-                proj_image_optflow_val= optflow_warp(
-                                                image_right_val, 
-                                                tf.expand_dims(optflow_val[:,:,:,0],-1),
-                                                tf.expand_dims(optflow_val[:,:,:,1],-1)
-                                                )
+                
+                
+                
+                
+                
 
-                #concatenate left and right image
-                img_pair_val = tf.concat([image_left_val, image_right_val, optflow_val, proj_image_optflow_val], axis=3)
-                #estimate both depth and optical flow of the left image
+                multilayer = [end_points['model/resnet_v2_50/block4'], 
+                              end_points['model/resnet_v2_50/block2'],
+                              end_points['model/resnet_v2_50/block1'],
+                              end_points['model/depth_prediction/resnet_v2_50/block1/unit_3/bottleneck_v2/conv1'],
+                              end_points['model/depth_prediction/resnet_v2_50/conv1']]
 
-                scope.reuse_variables()
-                pred_disp_val, depth_net_endpoints_left = depth_net(img_pair_val, 
-                                                  is_training=False)
+                pred_disp = upconvolution_net(multilayer,is_training=True)
 
-                pred_depth_val = pred_disp_val
+
+                pred_depth,end_points_up = pred_disp
+                import pdb;pdb.set_trace()
+            # with tf.name_scope("validate_loading"):
+            #     imageloader_val = DataLoader(FLAGS.dataset_dir,
+            #                             1,
+            #                             FLAGS.image_height, 
+            #                             FLAGS.image_width,
+            #                             FLAGS.num_sources,
+            #                             FLAGS.num_scales,
+            #                             'val')
+
+            #     image_left_val, image_right_val, label_val, intrinsics_val, tgt2src_projs_val,optflow_val,m_scale_val = imageloader_val.load_train_batch()
+
+            #     proj_image_optflow_val= optflow_warp(
+            #                                     image_right_val, 
+            #                                     tf.expand_dims(optflow_val[:,:,:,0],-1),
+            #                                     tf.expand_dims(optflow_val[:,:,:,1],-1)
+            #                                     )
+
+            #     #concatenate left and right image
+            #     img_pair_val = tf.concat([image_left_val, image_right_val, optflow_val, proj_image_optflow_val], axis=3)
+            #     #estimate both depth and optical flow of the left image
+
+            #     scope.reuse_variables()
+            #     pred_disp_val, depth_net_endpoints_left = depth_net(img_pair_val, 
+            #                                       is_training=False)
+
+            #     pred_depth_val = pred_disp_val
 
                 
                 
@@ -229,31 +254,31 @@ def main(_):
 
 
 
-        with tf.name_scope("compute_val_error"):
-            depth_loss_val = 0
-            smooth_loss_val = 0
-            for s in range(FLAGS.num_scales):
+        # with tf.name_scope("compute_val_error"):
+        #     depth_loss_val = 0
+        #     smooth_loss_val = 0
+        #     for s in range(FLAGS.num_scales):
 
-                #=======
-                #Smooth loss
-                #=======
-                smooth_loss_val += FLAGS.smooth_weight/(2**s) * \
-                    compute_smooth_loss(pred_depth_val[s])
+        #         #=======
+        #         #Smooth loss
+        #         #=======
+        #         smooth_loss_val += FLAGS.smooth_weight/(2**s) * \
+        #             compute_smooth_loss(pred_depth_val[s])
 
-                curr_label_val = tf.image.resize_area(label_val, 
-                    [int(FLAGS.resizedheight/(2**s)), int(FLAGS.resizedwidth/(2**s))])
+        #         curr_label_val = tf.image.resize_area(label_val, 
+        #             [int(FLAGS.resizedheight/(2**s)), int(FLAGS.resizedwidth/(2**s))])
 
 
-                #=======
-                #Depth loss
-                #=======
+        #         #=======
+        #         #Depth loss
+        #         #=======
                
-                di = tf.log(curr_label_val)-tf.log(pred_depth_val[s])
-                depth_loss_val += tf.sqrt(tf.reduce_mean(tf.multiply(di,di))+tf.reduce_mean(di)*tf.reduce_mean(di))*FLAGS.depth_weight/(2**s)
-                #curr_depth_error = tf.abs(curr_label_val - pred_depth_val[s])
-                #depth_loss_val+= tf.reduce_mean(curr_depth_error_val)*FLAGS.depth_weight/(2**s)
+        #         di = tf.log(curr_label_val)-tf.log(pred_depth_val[s])
+        #         depth_loss_val += tf.sqrt(tf.reduce_mean(tf.multiply(di,di))+tf.reduce_mean(di)*tf.reduce_mean(di))*FLAGS.depth_weight/(2**s)
+        #         #curr_depth_error = tf.abs(curr_label_val - pred_depth_val[s])
+        #         #depth_loss_val+= tf.reduce_mean(curr_depth_error_val)*FLAGS.depth_weight/(2**s)
 
-            total_loss_val = smooth_loss_val+depth_loss_val
+        #     total_loss_val = smooth_loss_val+depth_loss_val
 #            img_pair_val = tf.concat([image_left_val, image_right_val], axis=3)
 #            pred_disp_val, depth_net_endpoints_left_val = disp_net(img_pair_val, 
 #                                      is_training=True)
@@ -314,10 +339,10 @@ def main(_):
         #============================================
 
         #import pdb;pdb.set_trace()
-        with tf.name_scope("eval_op"):
-            tf.summary.scalar('eval_losses/total_loss', total_loss_val)
-            tf.summary.scalar('eval_losses/smooth_loss', smooth_loss_val)
-            tf.summary.scalar('eval_losses/depth_loss', depth_loss_val)
+        # with tf.name_scope("eval_op"):
+        #     tf.summary.scalar('eval_losses/total_loss', total_loss_val)
+        #     tf.summary.scalar('eval_losses/smooth_loss', smooth_loss_val)
+        #     tf.summary.scalar('eval_losses/depth_loss', depth_loss_val)
 
 
         with tf.name_scope("train_op"):
@@ -372,7 +397,7 @@ def main(_):
                 return [total_loss, should_stop]
 
             train_step_fn.step = 0
-            train_step_fn.total_loss_val = total_loss_val
+            # train_step_fn.total_loss_val = total_loss_val
 
             slim.learning.train(train_op, 
                                 FLAGS.checkpoint_dir,

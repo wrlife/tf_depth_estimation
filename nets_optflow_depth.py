@@ -281,3 +281,61 @@ def depth_net(tgt_image, is_training=True):
 
             end_points = utils.convert_collection_to_dict(end_points_collection)
             return [disp1, disp2, disp3, disp4], end_points
+
+
+def upconvolution_net(resnet_out, is_training=True):
+    batch_norm_params = {'is_training': is_training}
+
+    with tf.variable_scope('upconvnet_net') as sc:
+        end_points_collection = sc.original_name_scope + '_end_points'
+        with slim.arg_scope([slim.conv2d, slim.conv2d_transpose],
+                            normalizer_fn=slim.batch_norm,
+                            normalizer_params=batch_norm_params,
+                            weights_regularizer=slim.l2_regularizer(0.05),
+                            activation_fn=tf.nn.relu,
+                            outputs_collections=end_points_collection):
+
+
+            
+
+
+            upcnv5_i = slim.conv2d(resnet_out[0], 512, [1, 1], stride=1, scope='upcnv5')
+            upcnv5 = resize_like(upcnv5_i, resnet_out[1])
+            i5_in  = tf.add(upcnv5, resnet_out[1])
+            #icnv5  = slim.conv2d(i5_in, 256, [3, 3], stride=1, scope='icnv5')
+            # disp5  = DISP_SCALING * slim.conv2d(i5_in, 1,   [3, 3], stride=1, 
+            #     activation_fn=tf.sigmoid, normalizer_fn=None, scope='disp5') + MIN_DISP
+            
+                    
+            upcnv4_i = slim.conv2d(i5_in, 256, [1, 1], stride=1, scope='upcnv4')
+            upcnv4 = resize_like(upcnv4_i, resnet_out[2])
+            i4_in  = tf.add(upcnv4, resnet_out[2])
+            #icnv5  = slim.conv2d(i5_in, 256, [3, 3], stride=1, scope='icnv5')
+            disp4  = slim.conv2d(i4_in, 1,   [3, 3], stride=1, 
+                activation_fn=None, normalizer_fn=None, scope='disp4')
+
+            upcnv3_i = slim.conv2d(i4_in, 64, [1, 1], stride=1, scope='upcnv3')
+            upcnv3 = resize_like(upcnv3_i, resnet_out[3])
+            i3_in  = tf.add(upcnv3, resnet_out[3])
+            i3_in = tf.image.resize_bilinear(i3_in, [np.int(i3_in.get_shape()[1]+1), np.int(i3_in.get_shape()[2]+1)])
+            #icnv5  = slim.conv2d(i5_in, 256, [3, 3], stride=1, scope='icnv5')
+            disp3  =  slim.conv2d(i3_in, 1,   [3, 3], stride=1, 
+                activation_fn=None, normalizer_fn=None, scope='disp3') 
+
+            upcnv2_i = slim.conv2d(i3_in, 64, [1, 1], stride=1, scope='upcnv2')
+            upcnv2 = resize_like(upcnv2_i, resnet_out[4])
+            i2_in  = tf.add(upcnv2, resnet_out[4])
+            #icnv5  = slim.conv2d(i5_in, 256, [3, 3], stride=1, scope='icnv5')
+            disp2  = slim.conv2d(i2_in, 1,   [3, 3], stride=1, 
+                activation_fn=None, normalizer_fn=None, scope='disp2')
+
+
+            upcnv1_i = slim.conv2d(i2_in, 32, [1, 1], stride=1, scope='upcnv1')
+            disp1_up = tf.image.resize_bilinear(upcnv1_i, [np.int(disp2.get_shape()[1]*2), np.int(disp2.get_shape()[2]*2)])
+            disp1  = slim.conv2d(disp1_up, 1,   [3, 3], stride=1, 
+                activation_fn=None, normalizer_fn=None, scope='disp1') 
+            
+            #import pdb;pdb.set_trace()
+            end_points = utils.convert_collection_to_dict(end_points_collection)
+            return [disp1, disp2, disp3, disp4], end_points
+

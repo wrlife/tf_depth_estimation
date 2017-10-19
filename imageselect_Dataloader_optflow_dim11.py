@@ -138,7 +138,7 @@ class DataLoader(object):
         label = tf.reshape(tf.decode_raw(label_file, tf.float32),[self.image_height,self.image_width,1])
 
         #import pdb;pdb.set_trace()
-        #label = tf.image.resize_images(label,[self.resizedheight,self.resizedwidth],method = tf.image.ResizeMethod.AREA)
+        label = tf.image.resize_images(label,[self.resizedheight,self.resizedwidth],method = tf.image.ResizeMethod.AREA)
         label = label
 
         label.set_shape([self.resizedheight,self.resizedwidth, 1])
@@ -149,7 +149,7 @@ class DataLoader(object):
         #=====================
 
         optflow = tf.reshape(tf.decode_raw(optflow_file, tf.float32),[self.image_height,self.image_width,2])
-        #optflow = tf.image.resize_images(optflow,[self.resizedheight,self.resizedwidth],method = tf.image.ResizeMethod.AREA)
+        optflow = tf.image.resize_images(optflow,[self.resizedheight,self.resizedwidth],method = tf.image.ResizeMethod.AREA)
         optflow.set_shape([self.resizedheight,self.resizedwidth, 2])
 
 
