@@ -17,7 +17,7 @@ from utils import *
 flags = tf.app.flags
 flags.DEFINE_string("dataset_dir", "", "Dataset directory")
 flags.DEFINE_string("validate_dir", "./validation", "Dataset directory")
-flags.DEFINE_string("checkpoint_dir", "./checkpoints/", "Directory name to save the checkpoints")
+flags.DEFINE_string("checkpoint_dir", "./checkpoint_depthonly_maxnorm_iter12701/", "Directory name to save the checkpoints")
 flags.DEFINE_integer("image_height", 240, "The size of of a sample batch")
 flags.DEFINE_integer("image_width", 720, "The size of of a sample batch")
 flags.DEFINE_float("learning_rate", 0.0002, "Learning rate of for adam")
@@ -105,7 +105,7 @@ def main(_):
                 #concatenate left and right image
                 #img_pair = tf.concat([image_left, image_right, optflow, proj_image_optflow], axis=3)
                 #estimate both depth and optical flow of the left image
-                pred_disp, depth_net_endpoints_left = depth_net(image_left, 
+                pred_disp, depth_net_endpoints_left = disp_net(image_left, 
                                                       is_training=True)
 
                 pred_depth = pred_disp
@@ -132,7 +132,7 @@ def main(_):
                 #estimate both depth and optical flow of the left image
 
                 scope.reuse_variables()
-                pred_disp_val, depth_net_endpoints_left = depth_net(image_left_val, 
+                pred_disp_val, depth_net_endpoints_left = disp_net(image_left_val, 
                                                   is_training=False)
 
                 pred_depth_val = pred_disp_val

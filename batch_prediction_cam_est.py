@@ -26,8 +26,8 @@ flags.DEFINE_integer("image_height", 240, "The size of of a sample batch")
 flags.DEFINE_integer("image_width", 720, "The size of of a sample batch")
 
 FLAGS = flags.FLAGS
-FLAGS.resizedheight = 240
-FLAGS.resizedwidth = 720
+FLAGS.resizedheight = 224
+FLAGS.resizedwidth = 224
 FLAGS.checkpoint_dir="./checkpoints"
 
 
@@ -40,7 +40,7 @@ def main(_):
 
     with tf.Graph().as_default():
         #Load image and label
-        x = tf.placeholder(shape=[None, FLAGS.resizedheight, FLAGS.resizedwidth, 11], dtype=tf.float32)
+        x = tf.placeholder(shape=[None, FLAGS.resizedheight, FLAGS.resizedwidth, 6], dtype=tf.float32)
 
         img_list = sorted(glob(FLAGS.dataset_dir + '/*.jpg'))
 
@@ -49,8 +49,8 @@ def main(_):
             with tf.name_scope("depth_prediction"):
             #with tf.variable_scope("depth_prediction") as scope:
 
-                pred_disp, depth_net_endpoints = depth_net(x, 
-                                                      is_training=False)
+                pred_disp, pred_poses, pred_exp_logits, depth_net_endpoints_left = depth_net(x, 
+                                                                                            is_training=False)
 
                 # predictions, end_points = resnet_v2.resnet_v2_50(x,
                 #                                           global_pool=False,
@@ -79,71 +79,31 @@ def main(_):
                     fh = open(img_list[i],'r')
                     I = pil.open(fh)
                     I = np.array(I)
-                    #I = cv2.resize(I,(FLAGS.resizedwidth,FLAGS.resizedheight),interpolation = cv2.INTER_AREA)
+                    I = cv2.resize(I,(FLAGS.resizedwidth,FLAGS.resizedheight),interpolation = cv2.INTER_AREA)
 
                     
                     fh = open(img_list[i+1],'r')
                     I1 = pil.open(fh)
                     I1 = np.array(I1)
+                    I1 = cv2.resize(I1,(FLAGS.resizedwidth,FLAGS.resizedheight),interpolation = cv2.INTER_AREA)
 
-
-                    # fh = open(img_list[i],'r')
-                    # I = pil.open(fh)
-                    
-                    # I = np.array(I)
-
-                    # I1 = I[:,720:,:]
-                    # I = I[:,:720,:]
-
-                    #I1 = cv2.resize(I1,(FLAGS.resizedwidth,FLAGS.resizedheight),interpolation = cv2.INTER_AREA)                 
-
-                    #I = I.resize((224,224),pil.ANTIALIAS)
-                    
-                    #I = I/255.0
-
-                    #import pdb;pdb.set_trace()
-                    #Optical flow
-                    #flow=np.fromfile(FLAGS.dataset_dir+'/2342_2373.flo.flo', dtype=np.float32).reshape( I1.shape[0],I1.shape[1],2)
-                    flow = util.readFlow(FLAGS.dataset_dir+'/z.flo')
-
-                    #flow = np.zeros_like(flow)
-
-                    x_coord = np.repeat(np.reshape(np.linspace(0, I1.shape[1]-1, I1.shape[1]),[1,I1.shape[1]]),I1.shape[0],0)
-                    y_coord = np.repeat(np.reshape(np.linspace(0, I1.shape[0]-1, I1.shape[0]),[I1.shape[0],1]),I1.shape[1],1)
-
-
-                    x_coord = x_coord+flow[:,:,0]
-                    y_coord = y_coord+flow[:,:,1]
-                    
-
-
-                    #Bilinear interpolation
-                    I_warp,_ = util.bilinear_interpolate(I1,np.reshape(x_coord,-1), np.reshape(y_coord,-1)) 
-                    I_warp = I_warp.reshape(I1.shape[0],I1.shape[1],3)
-                    I_warp = I_warp.astype(np.float32)
-                    I = I.astype(np.float32)
-                    I1 = I1.astype(np.float32)
-                    
-                    #I_warp = np.zeros_like(I1)
-                    #I1 = np.zeros_like(I1)
-                    #I = np.zeros_like(I1)
-                    inputdata = np.concatenate([I,I1,flow,I_warp],axis=2)
-
-
-
-
-
-                    pred = sess.run(pred_disp,feed_dict={x:inputdata[None,:,:,:]})
-                    #test = np.asarray(pred[4])
-                    import pdb;pdb.set_trace()
-                    
+                    inputdata = np.concatenate([I,I1],axis=2)
 
 
                     #import pdb;pdb.set_trace()
-                    #z = pred[0][0][0][0,:,:,:]
-                    z = pred[0][0,:,:,0]
-                    #z=cv2.resize(pred[0][0,:,:,:],(FLAGS.image_width,FLAGS.image_height),interpolation = cv2.INTER_CUBIC)
-                    #z = cv2.bilateralFilter(z,9,75,75)
+
+
+                    pred,pose = sess.run([pred_disp,pred_poses],feed_dict={x:inputdata[None,:,:,:]})
+
+                    np.savetxt(img_list[i]+'.txt', pose[0,0,:], fmt='%f')
+                    #import pdb;pdb.set_trace()
+                    # with open(img_list[i]+'.txt', 'w') as f:
+                    #     f.write(pose[0,0,:])
+
+
+                    #import pdb;pdb.set_trace()
+                    z=cv2.resize(pred[0][0,:,:,0],(FLAGS.image_width,FLAGS.image_height),interpolation = cv2.INTER_CUBIC)
+                    z = cv2.bilateralFilter(z,9,75,75)
                     #z=1.0/z#[0][0,:,:,0]
                     z.astype(np.float32).tofile(FLAGS.output_dir+img_list[i].split('/')[-1]+'_z.bin')
                     
