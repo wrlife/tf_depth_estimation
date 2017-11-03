@@ -19,7 +19,7 @@ def Demon_Dataloader():
 
     top_output = ('IMAGE_PAIR', 'MOTION', 'DEPTH', 'INTRINSICS')
 
-    batch_size = 32
+    batch_size = 8
 
     reader_params = {
         'batch_size': batch_size,
@@ -36,12 +36,12 @@ def Demon_Dataloader():
     }
 
     # add data sources
-    # reader_params = datareader.add_sources(reader_params, glob.glob(os.path.join(_data_dir,'sun3d_train*.h5')), 0.8)
+    reader_params = datareader.add_sources(reader_params, glob.glob(os.path.join(_data_dir,'sun3d_train_0.1m_to_0.2m.h5')), 0.8)
     # reader_params = datareader.add_sources(reader_params, glob.glob(os.path.join(_data_dir,'rgbd_*_train.h5')), 0.2)
     # reader_params = datareader.add_sources(reader_params, glob.glob(os.path.join(_data_dir,'mvs_breisach.h5')), 0.3)
     # reader_params = datareader.add_sources(reader_params, glob.glob(os.path.join(_data_dir,'mvs_citywall.h5')), 0.3)
-    #reader_params = datareader.add_sources(reader_params, glob.glob(os.path.join(_data_dir,'mvs_achteck_turm.h5')), 0.003)
-    reader_params = datareader.add_sources(reader_params, glob.glob(os.path.join(_data_dir,'scenes11_train.h5')), 0.2)
+    # #reader_params = datareader.add_sources(reader_params, glob.glob(os.path.join(_data_dir,'mvs_achteck_turm.h5')), 0.003)
+    # reader_params = datareader.add_sources(reader_params, glob.glob(os.path.join(_data_dir,'scenes11_train.h5')), 0.2)
 
     
 
@@ -79,6 +79,7 @@ def Demon_Dataloader():
         ground_truth['translation'] = translation
 
         ground_truth['flow0'] = tf.transpose(ground_truth['flow0'], perm=[0,2,3,1])
+        ground_truth['depth0'] = tf.transpose(ground_truth['depth0'], perm=[0,2,3,1])
 
         data_dict['IMAGE_PAIR'] = tf.transpose(data_dict['IMAGE_PAIR'], perm=[0,2,3,1])
 

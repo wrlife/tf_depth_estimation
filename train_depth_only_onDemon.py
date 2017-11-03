@@ -33,7 +33,7 @@ flags.DEFINE_integer("validation_check", 100, "Directory name to pretrained weig
 flags.DEFINE_integer("num_sources", 2, "number of sources")
 
 flags.DEFINE_boolean("continue_train", False, "Continue training from previous checkpoint")
-flags.DEFINE_integer("save_latest_freq", 5000, \
+flags.DEFINE_integer("save_latest_freq", 100, \
     "Save the latest model every save_latest_freq iterations (overwrites the previous latest model)")
 flags.DEFINE_integer("max_steps", 200000, "Maximum number of training iterations")
 flags.DEFINE_integer("summary_freq", 100, "Logging every log_freq iterations")
@@ -108,12 +108,12 @@ def main(_):
                     tf.expand_dims(ground_truth['flow0'][:,:,:,1],-1)
                     )
 
-                inputdata = tf.concat([data_dict['IMAGE_PAIR'],ground_truth['flow0'],proj_image_optflow],axis = 3)
+                #inputdata = tf.concat([data_dict['IMAGE_PAIR'],ground_truth['flow0'],proj_image_optflow],axis = 3)
                 label = ground_truth['depth0']
                 #concatenate left and right image
                 #img_pair = tf.concat([image_left, image_right, optflow, proj_image_optflow], axis=3)
                 #estimate both depth and optical flow of the left image
-                pred_disp, depth_net_endpoints_left = depth_net(inputdata, 
+                pred_disp, depth_net_endpoints_left = depth_net(data_dict['IMAGE_PAIR'], 
                                                       is_training=True)
 
                 pred_depth = pred_disp
@@ -148,7 +148,7 @@ def main(_):
                 #Smooth loss
                 #=======
                 smooth_loss += FLAGS.smooth_weight/(2**s) * \
-                    compute_smooth_loss(pred_depth[s])
+                    compute_smooth_loss(1.0/pred_depth[s])
 
                 curr_label = tf.image.resize_area(label, 
                     [int(FLAGS.resizedheight/(2**s)), int(FLAGS.resizedwidth/(2**s))])
@@ -164,7 +164,7 @@ def main(_):
                 # depth_loss += tf.sqrt(tf.reduce_mean(tf.multiply(di,di))+tf.reduce_mean(di)*tf.reduce_mean(di))*FLAGS.depth_weight/(2**s)
 
                 curr_depth_error = tf.abs(curr_label - pred_depth[s])
-                depth_loss += tf.reduce_mean(curr_depth_error)*FLAGS.depth_weight/(2**s)
+                depth_loss += tf.reduce_mean(curr_depth_error)#*FLAGS.depth_weight/(2**s)
 
                 
                 #========
@@ -173,7 +173,7 @@ def main(_):
                 left_image_all.append(curr_image_left)
                 #proj_image_all.append(curr_proj_image)
 
-            total_loss =  depth_loss + smooth_loss#+ optflow_loss + pixel_loss# + depth_loss + smooth_loss  + optflow_loss
+            total_loss =  smooth_loss#depth_loss + smooth_loss#+ optflow_loss + pixel_loss# + depth_loss + smooth_loss  + optflow_loss
 
 
 
@@ -185,6 +185,8 @@ def main(_):
 
             tf.summary.image('optflow_project_image', \
                              proj_image_optflow)
+            tf.summary.image('GTdepth', \
+                             1.0/label)
             #import pdb;pdb.set_trace()
             for s in range(FLAGS.num_scales):
                 
@@ -192,8 +194,8 @@ def main(_):
                                  left_image_all[s])
 
 
-                tf.summary.image('scale%d_pred_depth' % s,
-                    pred_depth[s])
+                # tf.summary.image('scale%d_pred_depth' % s,
+                #     pred_depth[s])
 
                 # tf.summary.image('scale%d_projected_image_left_depth' % s, \
                 #     proj_image_all[s])
@@ -214,10 +216,18 @@ def main(_):
             incr_global_step = tf.assign(global_step, 
                                               global_step+1)           
 
+        saver = tf.train.Saver([var for var in tf.model_variables()])
         #import pdb;pdb.set_trace()
         with tf.Session() as sess:
-            tf.initialize_all_variables().run()
 
+
+            merged = tf.summary.merge_all()
+            train_writer = tf.summary.FileWriter(FLAGS.checkpoint_dir + '/sum',
+                                                  sess.graph)
+
+
+            tf.initialize_all_variables().run()
+            
             if FLAGS.continue_train:
                 if FLAGS.init_checkpoint_file is None:
                     checkpoint = tf.train.latest_checkpoint(FLAGS.checkpoint_dir)
@@ -236,19 +246,20 @@ def main(_):
 
                 if step % FLAGS.summary_freq == 0:
                     fetches["loss"] = total_loss
+                    fetches["summary"] = merged
 
 
                 results = sess.run(fetches)
                 gs = results["global_step"]
 
                 if step % FLAGS.summary_freq == 0:
-                    
+                    train_writer.add_summary(results["summary"], gs)
 
                     print("steps: %d === loss: %.3f" \
                             % (gs,
                                 results["loss"]))
                 if step % FLAGS.save_latest_freq == 0:
-                    self.save(sess, FLAGS.checkpoint_dir, 'latest')
+                    saver.save(sess, FLAGS.checkpoint_dir+'/model', global_step=step)
 
 
             # import pdb;pdb.set_trace()
