@@ -7,21 +7,22 @@ import numpy as np
 import tensorflow.contrib.slim.nets
 from tensorflow.contrib.slim.python.slim.learning import train_step
 
-from imageselect_Dataloader_optflow_dim11 import DataLoader
-#from Demon_Data_loader import *
+#from imageselect_Dataloader_optflow_dim11 import DataLoader
+from Demon_Data_loader import *
 
 import os
 
 from nets_optflow_depth import *
 
 from utils_lr import *
+import lmbspecialops as sops
 
 flags = tf.app.flags
 flags.DEFINE_string("dataset_dir", "", "Dataset directory")
 flags.DEFINE_string("validate_dir", "./validation", "Dataset directory")
 flags.DEFINE_string("checkpoint_dir", "./checkpoints/", "Directory name to save the checkpoints")
-flags.DEFINE_integer("image_height", 224, "The size of of a sample batch")
-flags.DEFINE_integer("image_width", 224, "The size of of a sample batch")
+flags.DEFINE_integer("image_height", 192, "The size of of a sample batch")
+flags.DEFINE_integer("image_width", 256, "The size of of a sample batch")
 flags.DEFINE_float("learning_rate", 0.0002, "Learning rate of for adam")
 flags.DEFINE_float("beta1", 0.9, "Momentum term of adam")
 flags.DEFINE_integer("batch_size", 10, "The size of of a sample batch")
@@ -31,9 +32,9 @@ flags.DEFINE_integer("num_sources", 2, "number of sources")
 
 
 flags.DEFINE_boolean("continue_train", False, "Continue training from previous checkpoint")
-flags.DEFINE_integer("save_latest_freq", 500, \
+flags.DEFINE_integer("save_latest_freq", 5000, \
     "Save the latest model every save_latest_freq iterations (overwrites the previous latest model)")
-flags.DEFINE_integer("max_steps", 200000, "Maximum number of training iterations")
+flags.DEFINE_integer("max_steps", 600000, "Maximum number of training iterations")
 flags.DEFINE_integer("summary_freq", 100, "Logging every log_freq iterations")
 flags.DEFINE_string("init_checkpoint_file", None, "Specific checkpoint file to initialize from")
 
@@ -46,11 +47,13 @@ FLAGS.smooth_weight = 1
 FLAGS.data_weight = 1
 FLAGS.optflow_weight = 0
 FLAGS.depth_weight = 1
-FLAGS.explain_reg_weight = 0.4
+FLAGS.explain_reg_weight = 0.5
+FLAGS.cam_consist_weight = 10
+FLAGS.consist_weight = 1
 FLAGS.cam_weight = 10
 
-FLAGS.resizedheight = 224
-FLAGS.resizedwidth = 224
+FLAGS.resizedheight = 192
+FLAGS.resizedwidth = 256
 
 slim = tf.contrib.slim
 resnet_v2 = tf.contrib.slim.nets.resnet_v2
@@ -78,7 +81,7 @@ def get_reference_explain_mask( downscaling, FLAGS):
     ref_exp_mask = np.tile(tmp, 
                            (opt.batch_size, 
                             int(opt.resizedheight/(2**downscaling)), 
-                            int(opt.resizedheight/(2**downscaling)), 
+                            int(opt.resizedwidth/(2**downscaling)), 
                             1))
     ref_exp_mask = tf.constant(ref_exp_mask, dtype=tf.float32)
     return ref_exp_mask
@@ -103,17 +106,21 @@ def main(_):
         #Load image and labels
         #============================================
         with tf.name_scope("data_loading"):
-            imageloader = DataLoader(FLAGS.dataset_dir,
-                                     FLAGS.batch_size,
-                                     FLAGS.image_height, 
-                                     FLAGS.image_width,
-                                     FLAGS.num_sources,
-                                     FLAGS.num_scales,
-                                     'train')
+            # imageloader = DataLoader(FLAGS.dataset_dir,
+            #                          FLAGS.batch_size,
+            #                          FLAGS.image_height, 
+            #                          FLAGS.image_width,
+            #                          FLAGS.num_sources,
+            #                          FLAGS.num_scales,
+            #                          'train')
 
-            image_left, image_right, label, intrinsics = imageloader.load_train_batch()
-        # data_dict,ground_truth = Demon_Dataloader()
-        # image_left, image_right = tf.split(value=data_dict['IMAGE_PAIR'], num_or_size_splits=2, axis=3)
+            # image_left, image_right, label, intrinsics = imageloader.load_train_batch()
+
+            data_dict,ground_truth,intrinsics = Demon_Dataloader()
+            image_left, image_right = tf.split(value=data_dict['IMAGE_PAIR'], num_or_size_splits=2, axis=3)
+            label = ground_truth['depth0']
+            #import pdb;pdb.set_trace()
+            gt_right_cam = tf.concat([ground_truth['translation'],ground_truth['rotation']],axis=1)
 
         #============================================
         #Define the model
@@ -152,7 +159,9 @@ def main(_):
             smooth_loss = 0
             exp_loss = 0
             consist_loss = 0
-            cam_loss = 0 
+            cam_consist_loss = 0 
+            cam_loss = 0
+            epsilon = 0.00001
 
             left_image_all = []
             right_image_all = []
@@ -167,9 +176,15 @@ def main(_):
 
 
             #=========
+            #Cam pose loss
+            #=========
+
+            cam_loss  = tf.reduce_mean((gt_right_cam-pred_poses_right[:,0,:])**2)*FLAGS.cam_weight
+
+            #=========
             #left right camera Consistent loss
             #=========
-            cam_loss += tf.norm(pred_poses_right[:,0,:]+pred_poses_left[:,0,:])*FLAGS.cam_weight
+            cam_consist_loss = tf.reduce_mean((pred_poses_right[:,0,:]+pred_poses_left[:,0,:])**2)*FLAGS.cam_consist_weight
 
 
             for s in range(FLAGS.num_scales):
@@ -198,8 +213,9 @@ def main(_):
                 #Depth loss
                 #=======
 
-                # curr_depth_error = tf.abs(curr_label - pred_depth[s])
-                # depth_loss += tf.reduce_mean(curr_depth_error)*FLAGS.depth_weight
+                diff = sops.replace_nonfinite(curr_label - pred_depth_left[s])
+                curr_depth_error = tf.abs(diff)
+                depth_loss += tf.reduce_mean(curr_depth_error)*FLAGS.depth_weight
 
 
                 #=======
@@ -275,8 +291,8 @@ def main(_):
                 right_depth_proj_error=consistent_depth_loss(1.0/pred_depth_right[s],warp_depth_right, src_pixel_coords_right)
                 left_depth_proj_error=consistent_depth_loss(1.0/pred_depth_left[s],warp_depth_left, src_pixel_coords_left)
 
-                depth_loss += tf.reduce_mean(right_depth_proj_error*tf.expand_dims(curr_exp_left[:,:,:,1], -1))*FLAGS.depth_weight
-                depth_loss += tf.reduce_mean(left_depth_proj_error*tf.expand_dims(curr_exp_right[:,:,:,1], -1))*FLAGS.depth_weight
+                consist_loss += tf.reduce_mean(right_depth_proj_error*tf.expand_dims(curr_exp_left[:,:,:,1], -1))*FLAGS.consist_weight
+                consist_loss += tf.reduce_mean(left_depth_proj_error*tf.expand_dims(curr_exp_right[:,:,:,1], -1))*FLAGS.consist_weight
 
 
 
@@ -291,7 +307,7 @@ def main(_):
                 proj_image_right_all.append(curr_proj_image_right)
 
 
-            total_loss =  pixel_loss + smooth_loss  +exp_loss +cam_loss+ depth_loss#+ optflow_loss + pixel_loss# + depth_loss + smooth_loss  + optflow_loss
+            total_loss =  pixel_loss + smooth_loss  +exp_loss +cam_loss+  consist_loss + cam_consist_loss
 
 
 
@@ -306,9 +322,14 @@ def main(_):
             tf.summary.scalar('losses/depth_loss', depth_loss)
             tf.summary.scalar('losses/pixel_loss', pixel_loss)
             tf.summary.scalar('losses/cam_loss', cam_loss)
-
+            tf.summary.scalar('losses/exp_loss', exp_loss)
+            tf.summary.scalar('losses/consist_loss', consist_loss)
+            tf.summary.scalar('losses/cam_consist_loss', cam_consist_loss)
 
             tf.contrib.layers.summarize_collection(tf.GraphKeys.TRAINABLE_VARIABLES)
+            
+            tf.summary.image('GT_left_depth', \
+                             1.0/label)            
 
             for s in range(FLAGS.num_scales):
                 
@@ -386,6 +407,8 @@ def main(_):
                     if step % FLAGS.summary_freq == 0:
                         fetches["loss"] = total_loss
                         fetches["summary"] = merged
+                        fetches["GT_cam"] = gt_right_cam
+                        fetches["est_cam"] = pred_poses_right
 
 
                     results = sess.run(fetches)
@@ -397,6 +420,11 @@ def main(_):
                         print("steps: %d === loss: %.3f" \
                                 % (gs,
                                     results["loss"]))
+
+                        translation_rotation = results["GT_cam"]
+                        print(translation_rotation[0])
+                        print(results["est_cam"][0])
+
                     if step % FLAGS.save_latest_freq == 0:
                         saver.save(sess, FLAGS.checkpoint_dir+'/model', global_step=step)
 

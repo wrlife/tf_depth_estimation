@@ -6,7 +6,7 @@ import numpy as np
 
 # Range of disparity/inverse depth values
 DISP_SCALING = 10
-MIN_DISP = 0.001
+MIN_DISP = 0.01
 
 def resize_like(inputs, ref):
     iH, iW = inputs.get_shape()[1], inputs.get_shape()[2]
@@ -182,7 +182,7 @@ def depth_net(tgt_image, is_training=True):
                 pose_avg = tf.reduce_mean(pose_pred, [1, 2])
                 # Empirically we found that scaling by a small constant 
                 # facilitates training.
-                pose_final = 0.1 * tf.reshape(pose_avg, [-1, num_source, 6])
+                pose_final = tf.reshape(pose_avg, [-1, num_source, 6])
             # Exp mask specific layers
 
             with tf.variable_scope('exp'):
