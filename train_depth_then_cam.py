@@ -14,6 +14,8 @@ from nets_optflow_depth import *
 
 from utils import *
 
+from Demon_Data_loader import *
+
 flags = tf.app.flags
 flags.DEFINE_string("dataset_dir", "", "Dataset directory")
 flags.DEFINE_string("validate_dir", "./validation", "Dataset directory")
@@ -23,10 +25,18 @@ flags.DEFINE_integer("image_width", 224, "The size of of a sample batch")
 flags.DEFINE_float("learning_rate", 0.0002, "Learning rate of for adam")
 flags.DEFINE_float("beta1", 0.9, "Momentum term of adam")
 flags.DEFINE_integer("batch_size", 10, "The size of of a sample batch")
-flags.DEFINE_integer("max_steps", 20000, "Maximum number of training iterations")
+flags.DEFINE_integer("max_steps", 200000, "Maximum number of training iterations")
 flags.DEFINE_string("pretrain_weight_dir", "./pretrained", "Directory name to pretrained weights")
 flags.DEFINE_integer("validation_check", 100, "Directory name to pretrained weights")
 flags.DEFINE_integer("num_sources", 2, "number of sources")
+
+
+flags.DEFINE_boolean("continue_train", False, "Continue training from previous checkpoint")
+flags.DEFINE_integer("save_latest_freq", 1000, \
+    "Save the latest model every save_latest_freq iterations (overwrites the previous latest model)")
+flags.DEFINE_integer("summary_freq", 1000, "Logging every log_freq iterations")
+flags.DEFINE_string("init_checkpoint_file", None, "Specific checkpoint file to initialize from")
+
 
 FLAGS = flags.FLAGS
 
@@ -37,8 +47,8 @@ FLAGS.optflow_weight = 0
 FLAGS.depth_weight = 1
 FLAGS.explain_reg_weight = 0.2
 
-FLAGS.resizedheight = 224
-FLAGS.resizedwidth = 224
+FLAGS.resizedheight = 192
+FLAGS.resizedwidth = 256
 
 slim = tf.contrib.slim
 resnet_v2 = tf.contrib.slim.nets.resnet_v2
@@ -66,7 +76,7 @@ def get_reference_explain_mask( downscaling, FLAGS):
     ref_exp_mask = np.tile(tmp, 
                            (opt.batch_size, 
                             int(opt.resizedheight/(2**downscaling)), 
-                            int(opt.resizedheight/(2**downscaling)), 
+                            int(opt.resizedwidth/(2**downscaling)), 
                             1))
     ref_exp_mask = tf.constant(ref_exp_mask, dtype=tf.float32)
     return ref_exp_mask
@@ -90,15 +100,20 @@ def main(_):
         #============================================
         #Load image and label
         #============================================
+        #import pdb;pdb.set_trace()
         with tf.name_scope("data_loading"):
-            imageloader = DataLoader(FLAGS.dataset_dir,
-                                     FLAGS.batch_size,
-                                     FLAGS.image_height, 
-                                     FLAGS.image_width,
-                                     FLAGS.num_sources,
-                                     FLAGS.num_scales,
-                                     'train')
-            image_left, image_right, label, intrinsics = imageloader.load_train_batch()
+            # imageloader = DataLoader(FLAGS.dataset_dir,
+            #                          FLAGS.batch_size,
+            #                          FLAGS.image_height, 
+            #                          FLAGS.image_width,
+            #                          FLAGS.num_sources,
+            #                          FLAGS.num_scales,
+            #                          'train')
+            #image_left, image_right, label, intrinsics = imageloader.load_train_batch()
+            data_dict,ground_truth,intrinsics = Demon_Dataloader()
+            image_left, image_right = tf.split(value=data_dict['IMAGE_PAIR'], num_or_size_splits=2, axis=3)
+            label = ground_truth['depth0']
+
 
 
         #============================================
@@ -121,17 +136,17 @@ def main(_):
 
 
 
-                pred_depth,depth_endpoints = disp_net(image_left,
+                # pred_disp,depth_endpoints = disp_net(image_left,
                                                       
-                                                      is_training=True)
+                #                                       is_training=True)
 
-                #import pdb;pdb.set_trace()
-                inputdata = tf.concat([image_left, image_right,pred_depth[0]], axis=3)
+                #import pdb;pdb.set_trace(),pred_disp[0]
+                inputdata = tf.concat([image_left, image_right], axis=3)
 
-                pred_depth_refine, pred_poses, pred_exp_logits, depth_net_endpoints_left = depth_net(inputdata,
+                pred_disp_refine, pred_poses, pred_exp_logits, depth_net_endpoints_left = depth_net(inputdata,
                                                       
                                                       is_training=True)                 
-  
+                
                 
                 
         #============================================   
@@ -159,16 +174,16 @@ def main(_):
                 #=======
                 #Smooth loss
                 #=======
-                smooth_loss += FLAGS.smooth_weight/(2**s) * \
-                    compute_smooth_loss(pred_depth[s])
+                # smooth_loss += FLAGS.smooth_weight/(2**s) * \
+                #     compute_smooth_loss(1.0/pred_disp[s])
 
                 #Refined depth smoothness
                 smooth_loss += FLAGS.smooth_weight/(2**s) * \
-                    compute_smooth_loss(pred_depth_refine[s])
+                    compute_smooth_loss(1.0/pred_disp_refine[s])
 
 
-                curr_label = tf.image.resize_area(label, 
-                    [int(FLAGS.resizedheight/(2**s)), int(FLAGS.resizedwidth/(2**s))])
+                # curr_label = tf.image.resize_area(label, 
+                #     [int(FLAGS.resizedheight/(2**s)), int(FLAGS.resizedwidth/(2**s))])
                 curr_image_left = tf.image.resize_area(image_left, 
                     [int(FLAGS.resizedheight/(2**s)), int(FLAGS.resizedwidth/(2**s))]) 
                 curr_image_right = tf.image.resize_area(image_right, 
@@ -182,8 +197,8 @@ def main(_):
                 #Depth loss
                 #=======
 
-                curr_depth_error = tf.abs(curr_label - pred_depth[s])
-                depth_loss += tf.reduce_mean(curr_depth_error)*FLAGS.depth_weight
+                # curr_depth_error = tf.abs(curr_label - pred_disp[s])
+                # depth_loss += tf.reduce_mean(curr_depth_error)*FLAGS.depth_weight
 
 
                 #=======
@@ -201,7 +216,7 @@ def main(_):
 
                 curr_proj_image, src_pixel_coords,_= projective_inverse_warp(
                     curr_image_right, 
-                    tf.squeeze(pred_depth_refine[s], axis=3),
+                    tf.squeeze(1.0/pred_disp_refine[s], axis=3),
                     pred_poses[:,0,:],
                     intrinsics[:,s,:,:]
                     )
@@ -216,6 +231,8 @@ def main(_):
                 #===============
                 ref_exp_mask = get_reference_explain_mask(s,FLAGS)
                 
+                #import pdb;pdb.set_trace()
+
                 if FLAGS.explain_reg_weight > 0:
                     curr_exp_logits = tf.slice(pred_exp_logits[s], 
                                                [0, 0, 0, 0], 
@@ -237,7 +254,7 @@ def main(_):
                 left_image_all.append(curr_image_left)
                 proj_image_all.append(curr_proj_image)
 
-            total_loss =  pixel_loss + smooth_loss + depth_loss +exp_loss#+ optflow_loss + pixel_loss# + depth_loss + smooth_loss  + optflow_loss
+            total_loss =  pixel_loss + smooth_loss  +exp_loss#+ optflow_loss + pixel_loss# + depth_loss + smooth_loss  + optflow_loss
 
 
 
@@ -261,11 +278,11 @@ def main(_):
                                  left_image_all[s])
 
 
-                tf.summary.image('scale%d_pred_depth' % s,
-                    pred_depth[s])
+                # tf.summary.image('scale%d_pred_depth' % s,
+                #     1.0/pred_disp[s])
 
                 tf.summary.image('scale%d_pred_depth_refine' % s,
-                    pred_depth_refine[s])
+                    1.0/pred_disp_refine[s])
 
                 tf.summary.image('scale%d_exp_mask' % s,
                     exp_mask_all[s])
@@ -286,31 +303,87 @@ def main(_):
 
 
 
-            def train_step_fn(session, *args, **kwargs):
 
-                total_loss, should_stop = train_step(session, *args, **kwargs)
+            global_step = tf.Variable(0, 
+                                           name='global_step', 
+                                           trainable=False)
+            incr_global_step = tf.assign(global_step, 
+                                              global_step+1)           
+
+            saver = tf.train.Saver([var for var in tf.model_variables()])
+            #import pdb;pdb.set_trace()
+            with tf.Session() as sess:
 
 
-                if train_step_fn.step % FLAGS.validation_check == 0:
-                    #accuracy = session.run(train_step_fn.accuracy_validation)
+                merged = tf.summary.merge_all()
+                train_writer = tf.summary.FileWriter(FLAGS.checkpoint_dir + '/sum',
+                                                      sess.graph)
 
-                    #total_loss_val = session.run(train_step_fn.total_loss_val)
-                    print('Step %s - Loss: %f ' % (str(train_step_fn.step).rjust(6, '0'), total_loss))
 
-                train_step_fn.step += 1
+                tf.initialize_all_variables().run()
+                
+                if FLAGS.continue_train:
+                    if FLAGS.init_checkpoint_file is None:
+                        checkpoint = tf.train.latest_checkpoint(FLAGS.checkpoint_dir)
+                    else:
+                        checkpoint = FLAGS.init_checkpoint_file
+                    print("Resume training from previous checkpoint: %s" % checkpoint)
+                    saver.restore(sess, checkpoint)
 
-                return [total_loss, should_stop]
 
-            train_step_fn.step = 0
-            # train_step_fn.total_loss_val = total_loss_val
+                for step in range(1, FLAGS.max_steps):
+                    fetches = {
+                        "train": train_op,
+                        "global_step": global_step,
+                        "incr_global_step": incr_global_step
+                    }
 
-            slim.learning.train(train_op, 
-                                FLAGS.checkpoint_dir,
-                                save_summaries_secs=20,
-                                save_interval_secs = 60,
-                                #init_fn=InitAssignFn,
-                                train_step_fn=train_step_fn
-                                )       
+                    if step % FLAGS.summary_freq == 0:
+                        fetches["loss"] = total_loss
+                        fetches["summary"] = merged
+
+
+                    results = sess.run(fetches)
+                    gs = results["global_step"]
+
+                    if step % FLAGS.summary_freq == 0:
+                        train_writer.add_summary(results["summary"], gs)
+
+                        print("steps: %d === loss: %.3f" \
+                                % (gs,
+                                    results["loss"]))
+                    if step % FLAGS.save_latest_freq == 0:
+                        saver.save(sess, FLAGS.checkpoint_dir+'/model', global_step=step)
+
+
+
+
+
+            # def train_step_fn(session, *args, **kwargs):
+
+            #     total_loss, should_stop = train_step(session, *args, **kwargs)
+
+
+            #     if train_step_fn.step % FLAGS.validation_check == 0:
+            #         #accuracy = session.run(train_step_fn.accuracy_validation)
+
+            #         #total_loss_val = session.run(train_step_fn.total_loss_val)
+            #         print('Step %s - Loss: %f ' % (str(train_step_fn.step).rjust(6, '0'), total_loss))
+
+            #     train_step_fn.step += 1
+
+            #     return [total_loss, should_stop]
+
+            # train_step_fn.step = 0
+            # # train_step_fn.total_loss_val = total_loss_val
+
+            # slim.learning.train(train_op, 
+            #                     FLAGS.checkpoint_dir,
+            #                     save_summaries_secs=20,
+            #                     save_interval_secs = 60,
+            #                     #init_fn=InitAssignFn,
+            #                     train_step_fn=train_step_fn
+            #                     )       
 
 
 

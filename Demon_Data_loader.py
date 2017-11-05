@@ -11,6 +11,34 @@ import depthmotionnet.datareader as datareader
 from depthmotionnet.v2.blocks import *
 from depthmotionnet.v2.losses import *
 
+def make_intrinsics_matrix(fx, fy, cx, cy):
+    # Assumes batch input
+    batch_size = fx.get_shape().as_list()[0]
+    zeros = tf.zeros_like(fx)
+    r1 = tf.stack([fx, zeros, cx], axis=1)
+    r2 = tf.stack([zeros, fy, cy], axis=1)
+    r3 = tf.constant([0.,0.,1.], shape=[1, 3])
+    r3 = tf.tile(r3, [batch_size, 1])
+    intrinsics = tf.stack([r1, r2, r3], axis=1)
+    return intrinsics
+
+def get_multi_scale_intrinsics(intrinsics, num_scales):
+
+    intrinsics_mscale = []
+
+
+    # Scale the intrinsics accordingly for each scale
+    for s in range(num_scales):
+        fx = intrinsics[:,0,0]/(2 ** s)
+        fy = intrinsics[:,1,1]/(2 ** s)
+        cx = intrinsics[:,0,2]/(2 ** s)
+        cy = intrinsics[:,1,2]/(2 ** s)
+        intrinsics_mscale.append(
+            make_intrinsics_matrix(fx, fy, cx, cy))
+    intrinsics_mscale = tf.stack(intrinsics_mscale, axis=1)
+    return intrinsics_mscale
+
+
 
 def Demon_Dataloader():
 
@@ -19,7 +47,7 @@ def Demon_Dataloader():
 
     top_output = ('IMAGE_PAIR', 'MOTION', 'DEPTH', 'INTRINSICS')
 
-    batch_size = 8
+    batch_size = 10
 
     reader_params = {
         'batch_size': batch_size,
@@ -37,11 +65,11 @@ def Demon_Dataloader():
 
     # add data sources
     reader_params = datareader.add_sources(reader_params, glob.glob(os.path.join(_data_dir,'sun3d_train_0.1m_to_0.2m.h5')), 0.8)
-    # reader_params = datareader.add_sources(reader_params, glob.glob(os.path.join(_data_dir,'rgbd_*_train.h5')), 0.2)
-    # reader_params = datareader.add_sources(reader_params, glob.glob(os.path.join(_data_dir,'mvs_breisach.h5')), 0.3)
-    # reader_params = datareader.add_sources(reader_params, glob.glob(os.path.join(_data_dir,'mvs_citywall.h5')), 0.3)
-    # #reader_params = datareader.add_sources(reader_params, glob.glob(os.path.join(_data_dir,'mvs_achteck_turm.h5')), 0.003)
-    # reader_params = datareader.add_sources(reader_params, glob.glob(os.path.join(_data_dir,'scenes11_train.h5')), 0.2)
+    reader_params = datareader.add_sources(reader_params, glob.glob(os.path.join(_data_dir,'rgbd_*_train.h5')), 0.2)
+    reader_params = datareader.add_sources(reader_params, glob.glob(os.path.join(_data_dir,'mvs_breisach.h5')), 0.3)
+    reader_params = datareader.add_sources(reader_params, glob.glob(os.path.join(_data_dir,'mvs_citywall.h5')), 0.3)
+    #reader_params = datareader.add_sources(reader_params, glob.glob(os.path.join(_data_dir,'mvs_achteck_turm.h5')), 0.003)
+    reader_params = datareader.add_sources(reader_params, glob.glob(os.path.join(_data_dir,'scenes11_train.h5')), 0.2)
 
     
 
@@ -83,4 +111,23 @@ def Demon_Dataloader():
 
         data_dict['IMAGE_PAIR'] = tf.transpose(data_dict['IMAGE_PAIR'], perm=[0,2,3,1])
 
-    return data_dict,ground_truth
+        # zeros = tf.zeros([batch_size,1, 1])
+        # ones = tf.ones([batch_size,1, 1])
+        # fx = tf.expand_dims(tf.expand_dims(data_dict['INTRINSICS'][:,0], -1), -1)
+        # fy = tf.expand_dims(tf.expand_dims(data_dict['INTRINSICS'][:,1], -1), -1)
+        # cx = tf.expand_dims(tf.expand_dims(data_dict['INTRINSICS'][:,2], -1), -1)
+        # cy = tf.expand_dims(tf.expand_dims(data_dict['INTRINSICS'][:,3], -1), -1)
+
+        # intic1 = tf.concat([fx, zeros, cx], axis=2)
+        # intic2 = tf.concat([zeros, fy, cy], axis=2)
+        # intic3 = tf.concat([zeros, zeros, ones], axis=2)
+        # intrinsics = tf.concat([intic1, intic2, intic3], axis=1)
+
+        intrinsics=make_intrinsics_matrix(data_dict['INTRINSICS'][:,0],data_dict['INTRINSICS'][:,1],data_dict['INTRINSICS'][:,2],data_dict['INTRINSICS'][:,3])
+
+        intrinsics = get_multi_scale_intrinsics(
+            intrinsics, 4)
+        
+
+
+    return data_dict,ground_truth,intrinsics
