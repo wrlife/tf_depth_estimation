@@ -71,28 +71,79 @@ def euler2mat(z, y, x):
   xmat = tf.concat([rotx_1, rotx_2, rotx_3], axis=2)
 
   rotMat = tf.matmul(tf.matmul(xmat, ymat), zmat)
+  
   return rotMat
 
-def pose_vec2mat(vec):
+def axis_angle_to_rotation_matrix(axis, angle):
+
+
+  B = tf.shape(angle)[0]
+  zeros = tf.zeros([B, 1, 1])
+  ones  = tf.ones([B, 1, 1])
+
+
+  M1 = tf.concat( [zeros,-tf.expand_dims(tf.expand_dims(axis[:,2],-1),-1), tf.expand_dims(tf.expand_dims(axis[:,1],-1),-1)], axis=2)
+  M2 = tf.concat( [zeros, zeros,-tf.expand_dims(tf.expand_dims(axis[:,0],-1),-1)], axis=2)
+  M3 = tf.concat( [zeros, zeros,zeros], axis=2)
+
+  M = tf.concat([M1, M2, M3], axis=1)
+
+  cp_axis = M-tf.transpose(M,perm=[0,2,1])
+  #import pdb;pdb.set_trace()
+  ANGLE_SIN = tf.concat([tf.sin(angle),tf.sin(angle),tf.sin(angle)],axis=2)
+  ANGLE_SIN = tf.concat([ANGLE_SIN, ANGLE_SIN, ANGLE_SIN], axis=1)
+
+  ANGLE_COS = tf.concat([tf.cos(angle),tf.cos(angle),tf.cos(angle)],axis=2)
+  ANGLE_COS = tf.concat([ANGLE_COS, ANGLE_COS, ANGLE_COS], axis=1)
+
+  ONES = tf.concat([ones,ones,ones],axis=2)
+  ONES = tf.concat([ONES,ONES,ONES],axis=1)
+
+  rotMat = tf.eye(3,batch_shape=[10]) + ANGLE_SIN*cp_axis + (ONES - ANGLE_COS)* tf.matmul(cp_axis,cp_axis)
+  return rotMat
+
+
+def pose_vec2mat(vec,format):
   """Converts 6DoF parameters to transformation matrix
   Args:
       vec: 6DoF parameters in the order of tx, ty, tz, rx, ry, rz -- [B, 6]
   Returns:
       A transformation matrix -- [B, 4, 4]
   """
+  
   batch_size, _ = vec.get_shape().as_list()
   translation = tf.slice(vec, [0, 0], [-1, 3])
   translation = tf.expand_dims(translation, -1)
-  rx = tf.slice(vec, [0, 3], [-1, 1])
-  ry = tf.slice(vec, [0, 4], [-1, 1])
-  rz = tf.slice(vec, [0, 5], [-1, 1])
-  rot_mat = euler2mat(rz, ry, rx)
-  rot_mat = tf.squeeze(rot_mat, axis=[1])
+
+  #import pdb;pdb.set_trace()
+  if format=='eular':
+    rx = tf.slice(vec, [0, 3], [-1, 1])
+    ry = tf.slice(vec, [0, 4], [-1, 1])
+    rz = tf.slice(vec, [0, 5], [-1, 1])
+    rot_mat = euler2mat(rz, ry, rx)
+    rot_mat = tf.squeeze(rot_mat, axis=[1])
+
+  elif format=='angleaxis':
+
+    axis = tf.slice(vec, [0, 3], [-1, 3])
+    angle = tf.expand_dims(tf.norm(axis,axis=1),-1)
+    #import pdb;pdb.set_trace()
+    # if( angle > 1.0e-6 ):
+    axis /=angle
+    angle = tf.expand_dims(angle,-1)
+    rot_mat = axis_angle_to_rotation_matrix(axis,angle)
+    # else:
+    #rot_mat = tf.eye(3,batch_shape=[10])
+      #translation = tf.zeros([batch_size, 3, 1])
+    #ones  = tf.ones([B, 1, 1])
+
+
+
   filler = tf.constant([0.0, 0.0, 0.0, 1.0], shape=[1, 1, 4])
   filler = tf.tile(filler, [batch_size, 1, 1])
   transform_mat = tf.concat([rot_mat, translation], axis=2)
   transform_mat = tf.concat([transform_mat, filler], axis=1)
-  return transform_mat
+  return transform_mat,angle,axis,
 
 def pixel2cam(depth, pixel_coords, intrinsics, is_homogeneous=True):
   """Transforms coordinates in the pixel frame to the camera frame.
@@ -165,7 +216,7 @@ def meshgrid(batch, height, width, is_homogeneous=True):
   coords = tf.tile(tf.expand_dims(coords, 0), [batch, 1, 1, 1])
   return coords
 
-def projective_inverse_warp(img, depth, pose, intrinsics):
+def projective_inverse_warp(img, depth, pose, intrinsics,format='eular'):
   """Inverse warp a source image to the target image plane based on projection.
 
   Args:
@@ -180,7 +231,7 @@ def projective_inverse_warp(img, depth, pose, intrinsics):
   """
   batch, height, width, _ = img.get_shape().as_list()
   # Convert pose vector to matrix
-  pose = pose_vec2mat(pose)
+  pose,angle, axis = pose_vec2mat(pose,format)
   # Construct pixel grid coordinates
   pixel_coords = meshgrid(batch, height, width)
   # Convert pixel coordinates to the camera frame
@@ -197,7 +248,7 @@ def projective_inverse_warp(img, depth, pose, intrinsics):
 
   output_img,wmask = bilinear_sampler(img, src_pixel_coords)
 
-  return output_img,src_pixel_coords,wmask, src_depth
+  return output_img,src_pixel_coords,wmask, src_depth, pose,axis
 
 def optflow_warp(img,flowx,flowy):
 

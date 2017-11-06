@@ -43,7 +43,7 @@ def get_multi_scale_intrinsics(intrinsics, num_scales):
 def Demon_Dataloader():
 
     # set the path to the training h5 files here
-    _data_dir = '/playpen/research/Data/benchmark/traindata'
+    _data_dir = './data/benchmark/'
 
     top_output = ('IMAGE_PAIR', 'MOTION', 'DEPTH', 'INTRINSICS')
 
@@ -57,14 +57,16 @@ def Demon_Dataloader():
         'builder_threads': 1,
         'scaled_width': 256,
         'scaled_height': 192,
-        'norm_trans_scale_depth': True,        
+        'norm_trans_scale_depth': False,        
         'top_output': top_output,
         'scene_pool_size': 650,
+        'augment_rot180': 0.5,
+        'augment_mirror_x': 0.5,        
         'builder_threads': 8,
     }
 
     # add data sources
-    reader_params = datareader.add_sources(reader_params, glob.glob(os.path.join(_data_dir,'sun3d_train_0.1m_to_0.2m.h5')), 0.8)
+    reader_params = datareader.add_sources(reader_params, glob.glob(os.path.join(_data_dir,'sun3d_train*.h5')), 0.8)
     reader_params = datareader.add_sources(reader_params, glob.glob(os.path.join(_data_dir,'rgbd_*_train.h5')), 0.2)
     reader_params = datareader.add_sources(reader_params, glob.glob(os.path.join(_data_dir,'mvs_breisach.h5')), 0.3)
     reader_params = datareader.add_sources(reader_params, glob.glob(os.path.join(_data_dir,'mvs_citywall.h5')), 0.3)
@@ -122,8 +124,9 @@ def Demon_Dataloader():
         # intic2 = tf.concat([zeros, fy, cy], axis=2)
         # intic3 = tf.concat([zeros, zeros, ones], axis=2)
         # intrinsics = tf.concat([intic1, intic2, intic3], axis=1)
+        batch, height, width, _ = ground_truth['depth0'].get_shape().as_list()
 
-        intrinsics=make_intrinsics_matrix(data_dict['INTRINSICS'][:,0],data_dict['INTRINSICS'][:,1],data_dict['INTRINSICS'][:,2],data_dict['INTRINSICS'][:,3])
+        intrinsics=make_intrinsics_matrix(data_dict['INTRINSICS'][:,0]*width,data_dict['INTRINSICS'][:,1]*height,data_dict['INTRINSICS'][:,2]*width,data_dict['INTRINSICS'][:,3]*height)
 
         intrinsics = get_multi_scale_intrinsics(
             intrinsics, 4)
