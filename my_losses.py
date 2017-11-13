@@ -225,7 +225,7 @@ def compute_loss_pairwise_depth(image_left, image_right,
             # Photo-consistency loss weighted by explainability
             if FLAGS.explain_reg_weight > 0:
                 pixel_loss += tf.reduce_mean(curr_proj_error_left * \
-                    tf.expand_dims(curr_exp_left[:,:,:,1], -1))*FLAGS.data_weight//(2**(s-2))
+                    tf.expand_dims(curr_exp_left[:,:,:,1], -1))*FLAGS.data_weight/(2**(s-2))
 
             exp_mask = tf.expand_dims(curr_exp_left[:,:,:,1], -1)                    
             exp_mask_all.append(exp_mask)
@@ -243,7 +243,7 @@ def compute_loss_pairwise_depth(image_left, image_right,
             # Photo-consistency loss weighted by explainability
             if FLAGS.explain_reg_weight > 0:
                 pixel_loss += tf.reduce_mean(curr_proj_error_right * \
-                    tf.expand_dims(curr_exp_right[:,:,:,1], -1))*FLAGS.data_weight//(2**(s-2))
+                    tf.expand_dims(curr_exp_right[:,:,:,1], -1))*FLAGS.data_weight/(2**(s-2))
 
 
             # if not depth_weight_consist is None:

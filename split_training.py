@@ -51,7 +51,7 @@ FLAGS = flags.FLAGS
 
 FLAGS.num_scales = 4
 FLAGS.smooth_weight = 5
-FLAGS.data_weight = 1000
+FLAGS.data_weight = 100
 
 FLAGS.optflow_weight = 0
 FLAGS.depth_weight = 500

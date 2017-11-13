@@ -1,5 +1,5 @@
 from __future__ import division
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
 
@@ -99,7 +99,7 @@ def axis_angle_to_rotation_matrix(axis, angle):
   # ONES = tf.concat([ones,ones,ones],axis=2)
   # ONES = tf.concat([ONES,ONES,ONES],axis=1)
 
-  rotMat = tf.eye(3,batch_shape=[10]) + tf.sin(angle)*cp_axis + (ones - tf.cos(angle))* tf.matmul(cp_axis,cp_axis)
+  rotMat = tf.eye(3,batch_shape=[B]) + tf.sin(angle)*cp_axis + (ones - tf.cos(angle))* tf.matmul(cp_axis,cp_axis)
   return rotMat
 
 
