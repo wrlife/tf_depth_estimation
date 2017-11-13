@@ -16,6 +16,7 @@ from nets_optflow_depth import *
 
 from utils_lr import *
 import lmbspecialops as sops
+from depthmotionnet.v2.losses import *
 
 flags = tf.app.flags
 flags.DEFINE_string("dataset_dir", "", "Dataset directory")
@@ -43,14 +44,18 @@ flags.DEFINE_string("init_checkpoint_file", None, "Specific checkpoint file to i
 FLAGS = flags.FLAGS
 
 FLAGS.num_scales = 4
-FLAGS.smooth_weight = 1
-FLAGS.data_weight = 1
+FLAGS.smooth_weight = 5
+FLAGS.data_weight = 1000
 FLAGS.optflow_weight = 0
-FLAGS.depth_weight = 1
-FLAGS.explain_reg_weight = 0.5
+FLAGS.depth_weight = 500
+FLAGS.sig_depth_weight = 1500
+
+FLAGS.explain_reg_weight = 30
 FLAGS.cam_consist_weight = 10
-FLAGS.consist_weight = 1
-FLAGS.cam_weight = 10
+
+FLAGS.consist_weight = 10
+FLAGS.cam_weight_rot = 100
+FLAGS.cam_weight_tran = 10
 
 FLAGS.resizedheight = 192
 FLAGS.resizedwidth = 256
@@ -132,14 +137,21 @@ def main(_):
                 #Using left right to predict
                 inputdata = tf.concat([image_left, image_right], axis=3)
 
-                pred_depth_left, pred_poses_right, pred_exp_logits_left, depth_net_endpoints_left = depth_net(inputdata,                                                     
+                pred_depth_left, pred_poses_right, pred_exp_logits_left, depth_net_endpoints = depth_net(inputdata,                                                     
                                                                                                     is_training=True)                 
                 #Using right left to predict
                 scope.reuse_variables()
                 inputdata = tf.concat([image_right, image_left], axis=3)
                 pred_depth_right, pred_poses_left, pred_exp_logits_right, depth_net_endpoints_right = depth_net(inputdata,                                                     
-                                                                                                    is_training=True)                
-                
+                                                                                                    is_training=True)
+
+                #import pdb;pdb.set_trace()
+                # pred_depth_left = [tf.expand_dims(d[:,:,:,0],-1) for d in pred_depth]
+                # pred_depth_right =  [tf.expand_dims(d[:,:,:,1],-1) for d in pred_depth]
+                # pred_poses_left = pred_poses[:,1,:]
+                # pred_poses_right = pred_poses[:,0,:]
+
+
         #============================================   
         #Specify the loss function:
         #============================================
@@ -153,6 +165,7 @@ def main(_):
             consist_loss = 0
             cam_consist_loss = 0 
             cam_loss = 0
+            sig_depth_loss = 0
             epsilon = 0.00001
 
             left_image_all = []
@@ -167,16 +180,37 @@ def main(_):
             exp_mask_all = []
 
 
-            #=========
-            #Cam pose loss
-            #=========
 
-            cam_loss  = tf.reduce_mean((gt_right_cam-pred_poses_right[:,0,:])**2)*FLAGS.cam_weight
 
             # =========
             # left right camera Consistent loss
             # =========
-            cam_consist_loss = tf.reduce_mean((pred_poses_right[:,0,:]+pred_poses_left[:,0,:])**2)*FLAGS.cam_consist_weight
+            # cam_consist_loss = tf.reduce_mean((pred_poses_right+pred_poses_left)**2)*FLAGS.cam_consist_weight
+            
+            #=========
+            #Cam pose loss
+            #=========
+
+            gt_proj_l2r = pose_vec2mat(gt_right_cam,'angleaxis')
+            pose_left2right = pose_vec2mat(pred_poses_right[:,0,:],'angleaxis')
+            pose_righ2left = pose_vec2mat(pred_poses_left[:,0,:],'angleaxis')
+
+            cam_loss  += tf.reduce_mean((gt_proj_l2r[:,0:3,0:3]-pose_left2right[:,0:3,0:3])**2)*FLAGS.cam_weight_rot
+            cam_loss  += tf.reduce_mean((tf.matrix_inverse(gt_proj_l2r)[:,0:3,3]-pose_righ2left[:,0:3,3])**2)*FLAGS.cam_weight_tran
+
+
+
+            
+            #=========
+            #Gradient loss
+            #=========
+            
+            sig_params = {'deltas':[1,2,4,8,16], 'weights':[1,1,1,1,1], 'epsilon': 0.001}
+
+            pr_depth_sig = scale_invariant_gradient(tf.transpose(pred_depth_left[0], perm=[0,3,1,2]), **sig_params)
+            gt_depth_sig = scale_invariant_gradient(tf.transpose(label, perm=[0,3,1,2]), **sig_params)
+
+            sig_depth_loss += FLAGS.sig_depth_weight* pointwise_l2_loss(pr_depth_sig, gt_depth_sig, epsilon=epsilon)
 
 
             for s in range(FLAGS.num_scales):
@@ -184,11 +218,11 @@ def main(_):
                 #=======
                 #Smooth loss
                 #=======
-                smooth_loss += FLAGS.smooth_weight/(2**s) * \
-                    compute_smooth_loss(1.0/pred_depth_left[s])
+                # smooth_loss += FLAGS.smooth_weight/(2**s) * \
+                #     compute_smooth_loss(1.0/pred_depth_left[s])
 
-                smooth_loss += FLAGS.smooth_weight/(2**s) * \
-                    compute_smooth_loss(1.0/pred_depth_right[s])
+                # smooth_loss += FLAGS.smooth_weight/(2**s) * \
+                #     compute_smooth_loss(1.0/pred_depth_right[s])
 
                 curr_label = tf.image.resize_area(label, 
                     [int(FLAGS.resizedheight/(2**s)), int(FLAGS.resizedwidth/(2**s))])
@@ -207,7 +241,10 @@ def main(_):
 
                 diff = sops.replace_nonfinite(curr_label - pred_depth_left[s])
                 curr_depth_error = tf.abs(diff)
-                depth_loss += tf.reduce_mean(curr_depth_error)*FLAGS.depth_weight
+                depth_loss += tf.reduce_mean(curr_depth_error)*FLAGS.depth_weight/(2**s)
+
+                
+
 
 
                 #=======
@@ -217,24 +254,41 @@ def main(_):
 
                 #import pdb;pdb.set_trace()
 
-                curr_proj_image_left, src_pixel_coords_right,wmask_left, warp_depth_right, angle,axis= projective_inverse_warp(
+                curr_proj_image_left, src_pixel_coords_right,wmask_left, warp_depth_right,_= projective_inverse_warp(
                     curr_image_right, 
                     tf.squeeze(1.0/pred_depth_left[s], axis=3),
-                    pred_poses_right[:,0,:],
+                    #pred_poses_right[:,0,:],
+                    pose_left2right,
                     intrinsics[:,s,:,:],
-                    format='angleaxis')
+                    format='matrix')
 
-
+                #wmask_left = tf.concat([wmask_left,wmask_left,wmask_left],axis=3)
                 curr_proj_error_left = tf.abs(curr_proj_image_left - curr_image_left)
 
 
-                curr_proj_image_right, src_pixel_coords_left,wmask_right, warp_depth_left,_,_= projective_inverse_warp(
+                curr_proj_image_right, src_pixel_coords_left,wmask_right, warp_depth_left,_= projective_inverse_warp(
                     curr_image_left, 
                     tf.squeeze(1.0/pred_depth_right[s], axis=3),
-                    pred_poses_left[:,0,:],
+                    #pred_poses_left[:,0,:],
+                    pose_righ2left,
                     intrinsics[:,s,:,:],
-                    format='angleaxis')
+                    format='matrix')
+
+                #wmask_right = tf.concat([wmask_right,wmask_right,wmask_right],axis=3)
                 curr_proj_error_right = tf.abs(curr_proj_image_right - curr_image_right)
+
+
+
+                #import pdb;pdb.set_trace()
+
+                
+
+
+                # =========
+                # left right camera Consistent loss
+                # =========
+
+                    #cam_consist_loss = tf.reduce_mean((tf.matrix_inverse(pose_left2right)-pose_righ2left)**2)*FLAGS.cam_consist_weight
 
 
 
@@ -244,17 +298,17 @@ def main(_):
                 ref_exp_mask = get_reference_explain_mask(s,FLAGS)
                 
                 if FLAGS.explain_reg_weight > 0:
-                    curr_exp_logits = tf.slice(pred_exp_logits_left[s], 
+                    curr_exp_logits_left = tf.slice(pred_exp_logits_left[s], 
                                                [0, 0, 0, 0], 
                                                [-1, -1, -1, 2])
                     exp_loss += FLAGS.explain_reg_weight * \
-                        compute_exp_reg_loss(curr_exp_logits,
+                        compute_exp_reg_loss(curr_exp_logits_left,
                                                   ref_exp_mask)
-                    curr_exp_left = tf.nn.softmax(curr_exp_logits)
+                    curr_exp_left = tf.nn.softmax(curr_exp_logits_left)
                 # Photo-consistency loss weighted by explainability
                 if FLAGS.explain_reg_weight > 0:
                     pixel_loss += tf.reduce_mean(curr_proj_error_left * \
-                        tf.expand_dims(curr_exp_left[:,:,:,1], -1))*FLAGS.data_weight
+                        tf.expand_dims(curr_exp_left[:,:,:,1], -1))*FLAGS.data_weight/(2**s)
 
                 exp_mask = tf.expand_dims(curr_exp_left[:,:,:,1], -1)                    
                 exp_mask_all.append(exp_mask)
@@ -262,17 +316,17 @@ def main(_):
 
                 
                 if FLAGS.explain_reg_weight > 0:
-                    curr_exp_logits = tf.slice(pred_exp_logits_right[s], 
+                    curr_exp_logits_right = tf.slice(pred_exp_logits_right[s], 
                                                [0, 0, 0, 0], 
                                                [-1, -1, -1, 2])
                     exp_loss += FLAGS.explain_reg_weight * \
-                        compute_exp_reg_loss(curr_exp_logits,
+                        compute_exp_reg_loss(curr_exp_logits_right,
                                                   ref_exp_mask)
-                    curr_exp_right = tf.nn.softmax(curr_exp_logits)
+                    curr_exp_right = tf.nn.softmax(curr_exp_logits_right)
                 # Photo-consistency loss weighted by explainability
                 if FLAGS.explain_reg_weight > 0:
                     pixel_loss += tf.reduce_mean(curr_proj_error_right * \
-                        tf.expand_dims(curr_exp_right[:,:,:,1], -1))*FLAGS.data_weight
+                        tf.expand_dims(curr_exp_right[:,:,:,1], -1))*FLAGS.data_weight/(2**s)
 
 
 
@@ -283,11 +337,11 @@ def main(_):
                 right_depth_proj_error=consistent_depth_loss(1.0/pred_depth_right[s],warp_depth_right, src_pixel_coords_right)
                 left_depth_proj_error=consistent_depth_loss(1.0/pred_depth_left[s],warp_depth_left, src_pixel_coords_left)
 
-                consist_loss += tf.reduce_mean(right_depth_proj_error*tf.expand_dims(curr_exp_left[:,:,:,1], -1))*FLAGS.consist_weight
-                consist_loss += tf.reduce_mean(left_depth_proj_error*tf.expand_dims(curr_exp_right[:,:,:,1], -1))*FLAGS.consist_weight
+                consist_loss += tf.reduce_mean(right_depth_proj_error*tf.expand_dims(curr_exp_left[:,:,:,1], -1))*FLAGS.consist_weight/(2**s)
+                consist_loss += tf.reduce_mean(left_depth_proj_error*tf.expand_dims(curr_exp_right[:,:,:,1], -1))*FLAGS.consist_weight/(2**s)
 
 
-
+                #import pdb;pdb.set_trace()
                 #========
                 #For tensorboard visualize
                 #========    
@@ -298,8 +352,10 @@ def main(_):
                 proj_image_left_all.append(curr_proj_image_left)
                 proj_image_right_all.append(curr_proj_image_right)
 
+                proj_error_stack_all.append(curr_proj_error_right)
 
-            total_loss =  pixel_loss + smooth_loss  +exp_loss +cam_loss+  consist_loss + cam_consist_loss + depth_loss
+
+            total_loss =  pixel_loss + smooth_loss  +exp_loss +cam_loss+  consist_loss + cam_consist_loss + depth_loss + sig_depth_loss
 
 
 
@@ -317,11 +373,16 @@ def main(_):
             tf.summary.scalar('losses/exp_loss', exp_loss)
             tf.summary.scalar('losses/consist_loss', consist_loss)
             tf.summary.scalar('losses/cam_consist_loss', cam_consist_loss)
+            tf.summary.scalar('losses/sig_depth_loss', sig_depth_loss)
 
-            tf.contrib.layers.summarize_collection(tf.GraphKeys.TRAINABLE_VARIABLES)
+            tf.summary.histogram('scale%d_pred_depth_left' % s,
+                pred_depth_left[0])
+
+            tf.summary.histogram('scale%d_pred_depth_right' % s,
+                pred_depth_right[0])
             
-            tf.summary.image('GT_left_depth', \
-                             1.0/label)            
+            tf.summary.histogram('GT_left_depth', \
+                             sops.replace_nonfinite(label))            
 
             for s in range(FLAGS.num_scales):
                 
@@ -332,7 +393,10 @@ def main(_):
                 tf.summary.image('scale%d_projected_image_left' % s, \
                                  proj_image_left_all[s])
                 tf.summary.image('scale%d_projected_image_right' % s, \
-                                 proj_image_right_all[s])                
+                                 proj_image_right_all[s])
+
+                tf.summary.image('scale%d_projected_error_left' % s, \
+                                 proj_error_stack_all[s])                
 
                 tf.summary.image('scale%d_pred_depth_left' % s,
                     1.0/pred_depth_left[s])
@@ -401,7 +465,7 @@ def main(_):
                         fetches["summary"] = merged
                         fetches["GT_cam"] = gt_right_cam
                         fetches["est_cam"] = pred_poses_right
-
+                        fetches["est_cam_left"] = pred_poses_left
 
 
                     results = sess.run(fetches)
@@ -417,6 +481,7 @@ def main(_):
                         translation_rotation = results["GT_cam"]
                         print(translation_rotation[0])
                         print(results["est_cam"][0])
+                        print(results["est_cam_left"][0])
 
                     if step % FLAGS.save_latest_freq == 0:
                         saver.save(sess, FLAGS.checkpoint_dir+'/model', global_step=step)

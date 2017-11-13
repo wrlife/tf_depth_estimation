@@ -24,7 +24,7 @@ flags.DEFINE_integer("image_width", 720, "The size of of a sample batch")
 
 FLAGS = flags.FLAGS
 
-FLAGS.checkpoint_dir="./checkpoint_depthonly_maxnorm_iter12701"
+FLAGS.checkpoint_dir="./checkpoints_troat"
 
 def main(_):
 
@@ -47,7 +47,7 @@ def main(_):
 
 
 				saver = tf.train.Saver([var for var in tf.model_variables()])
-				#import pdb;pdb.set_trace()
+				import pdb;pdb.set_trace()
 				checkpoint = tf.train.latest_checkpoint(FLAGS.checkpoint_dir)
 
 			with tf.Session() as sess:

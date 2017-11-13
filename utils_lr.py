@@ -90,16 +90,16 @@ def axis_angle_to_rotation_matrix(axis, angle):
 
   cp_axis = M-tf.transpose(M,perm=[0,2,1])
   #import pdb;pdb.set_trace()
-  ANGLE_SIN = tf.concat([tf.sin(angle),tf.sin(angle),tf.sin(angle)],axis=2)
-  ANGLE_SIN = tf.concat([ANGLE_SIN, ANGLE_SIN, ANGLE_SIN], axis=1)
+  # ANGLE_SIN = tf.concat([tf.sin(angle),tf.sin(angle),tf.sin(angle)],axis=2)
+  # ANGLE_SIN = tf.concat([ANGLE_SIN, ANGLE_SIN, ANGLE_SIN], axis=1)
 
-  ANGLE_COS = tf.concat([tf.cos(angle),tf.cos(angle),tf.cos(angle)],axis=2)
-  ANGLE_COS = tf.concat([ANGLE_COS, ANGLE_COS, ANGLE_COS], axis=1)
+  # ANGLE_COS = tf.concat([tf.cos(angle),tf.cos(angle),tf.cos(angle)],axis=2)
+  # ANGLE_COS = tf.concat([ANGLE_COS, ANGLE_COS, ANGLE_COS], axis=1)
 
-  ONES = tf.concat([ones,ones,ones],axis=2)
-  ONES = tf.concat([ONES,ONES,ONES],axis=1)
+  # ONES = tf.concat([ones,ones,ones],axis=2)
+  # ONES = tf.concat([ONES,ONES,ONES],axis=1)
 
-  rotMat = tf.eye(3,batch_shape=[10]) + ANGLE_SIN*cp_axis + (ONES - ANGLE_COS)* tf.matmul(cp_axis,cp_axis)
+  rotMat = tf.eye(3,batch_shape=[10]) + tf.sin(angle)*cp_axis + (ones - tf.cos(angle))* tf.matmul(cp_axis,cp_axis)
   return rotMat
 
 
@@ -132,6 +132,9 @@ def pose_vec2mat(vec,format):
     axis /=angle
     angle = tf.expand_dims(angle,-1)
     rot_mat = axis_angle_to_rotation_matrix(axis,angle)
+  elif format=='test':
+    rot_mat = tf.eye(3,batch_shape=[10])
+    translation = tf.zeros([batch_size, 3, 1])
     # else:
     #rot_mat = tf.eye(3,batch_shape=[10])
       #translation = tf.zeros([batch_size, 3, 1])
@@ -143,7 +146,7 @@ def pose_vec2mat(vec,format):
   filler = tf.tile(filler, [batch_size, 1, 1])
   transform_mat = tf.concat([rot_mat, translation], axis=2)
   transform_mat = tf.concat([transform_mat, filler], axis=1)
-  return transform_mat,angle,axis,
+  return transform_mat
 
 def pixel2cam(depth, pixel_coords, intrinsics, is_homogeneous=True):
   """Transforms coordinates in the pixel frame to the camera frame.
@@ -231,7 +234,9 @@ def projective_inverse_warp(img, depth, pose, intrinsics,format='eular'):
   """
   batch, height, width, _ = img.get_shape().as_list()
   # Convert pose vector to matrix
-  pose,angle, axis = pose_vec2mat(pose,format)
+  #import pdb;pdb.set_trace()
+  if format=='eular' or format=='angleaxis':
+    pose = pose_vec2mat(pose,format)
   # Construct pixel grid coordinates
   pixel_coords = meshgrid(batch, height, width)
   # Convert pixel coordinates to the camera frame
@@ -248,7 +253,7 @@ def projective_inverse_warp(img, depth, pose, intrinsics,format='eular'):
 
   output_img,wmask = bilinear_sampler(img, src_pixel_coords)
 
-  return output_img,src_pixel_coords,wmask, src_depth, pose,axis
+  return output_img,src_pixel_coords,wmask, src_depth,pose
 
 def optflow_warp(img,flowx,flowy):
 
@@ -448,7 +453,7 @@ def consistent_depth_loss(src_depth,pred_src_depth, coords):
         w00 * im00, w01 * im01,
         w10 * im10, w11 * im11
     ])
-
+    #wmask = w00+w01+w10+w11
 
     return tf.abs(pred_src_depth-output)
 
@@ -457,7 +462,7 @@ def consistent_depth_loss(src_depth,pred_src_depth, coords):
 
 def solve_scale(static_points,moving_points):
 
-  import pdb;pdb.set_trace()
+  #import pdb;pdb.set_trace()
   y=0.0
   #for i in range(length(static_points)):
     #y = y+(static_points(:,i)-s*moving_points(:,i)).T*(static_points(:,i)-s*moving_points(:,i))

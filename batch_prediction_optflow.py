@@ -76,6 +76,7 @@ def main(_):
                 #import pdb;pdb.set_trace()
                 for i in range(len(img_list)-1):
 
+                    
                     fh = open(img_list[i],'r')
                     I = pil.open(fh)
                     I = np.array(I)

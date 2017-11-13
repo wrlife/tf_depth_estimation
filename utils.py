@@ -70,8 +70,11 @@ def euler2mat(z, y, x):
   rotx_3 = tf.concat([zeros, sinx, cosx], axis=3)
   xmat = tf.concat([rotx_1, rotx_2, rotx_3], axis=2)
 
+  import pdb;pdb.set_trace()
   rotMat = tf.matmul(tf.matmul(xmat, ymat), zmat)
   return rotMat
+
+
 
 def pose_vec2mat(vec):
   """Converts 6DoF parameters to transformation matrix
@@ -177,6 +180,7 @@ def projective_inverse_warp(img, depth, pose, intrinsics):
   """
   batch, height, width, _ = img.get_shape().as_list()
   # Convert pose vector to matrix
+  
   pose = pose_vec2mat(pose)
   # Construct pixel grid coordinates
   pixel_coords = meshgrid(batch, height, width)
