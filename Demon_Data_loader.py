@@ -43,18 +43,18 @@ def get_multi_scale_intrinsics(intrinsics, num_scales):
 def Demon_Dataloader():
 
     # set the path to the training h5 files here
-    _data_dir = './data/benchmark/'
+    _data_dir = '/playpen/research/Data/benchmark/traindata/'
 
     top_output = ('IMAGE_PAIR', 'MOTION', 'DEPTH', 'INTRINSICS')
 
-    batch_size = 10
+    batch_size = 12
 
     reader_params = {
         'batch_size': batch_size,
         'test_phase': False,
         'motion_format': 'ANGLEAXIS6',
         'inverse_depth': True,
-        'builder_threads': 1,
+        'builder_threads': 4,
         'scaled_width': 256,
         'scaled_height': 192,
         'norm_trans_scale_depth': False,        
@@ -105,12 +105,16 @@ def Demon_Dataloader():
             data_dict['INTRINSICS'],
         )
 
+
+        # angle = tf.expand_dims(tf.norm(rotation,axis=1),-1)
+        # rotation /=angle
+
         ground_truth['rotation'] = rotation
         ground_truth['translation'] = translation
 
-        ground_truth['flow0'] = tf.transpose(ground_truth['flow0'], perm=[0,2,3,1])
+        # ground_truth['flow0'] = tf.transpose(ground_truth['flow0'], perm=[0,2,3,1])
         ground_truth['depth0'] = tf.transpose(ground_truth['depth0'], perm=[0,2,3,1])
-
+        ground_truth['depth2'] = tf.transpose(ground_truth['depth2'], perm=[0,2,3,1])
         data_dict['IMAGE_PAIR'] = tf.transpose(data_dict['IMAGE_PAIR'], perm=[0,2,3,1])
 
         # zeros = tf.zeros([batch_size,1, 1])
@@ -125,6 +129,8 @@ def Demon_Dataloader():
         # intic3 = tf.concat([zeros, zeros, ones], axis=2)
         # intrinsics = tf.concat([intic1, intic2, intic3], axis=1)
         batch, height, width, _ = ground_truth['depth0'].get_shape().as_list()
+
+                
 
         intrinsics=make_intrinsics_matrix(data_dict['INTRINSICS'][:,0]*width,data_dict['INTRINSICS'][:,1]*height,data_dict['INTRINSICS'][:,2]*width,data_dict['INTRINSICS'][:,3]*height)
 
