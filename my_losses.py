@@ -43,13 +43,24 @@ def compute_exp_reg_loss( pred, ref):
     return tf.reduce_mean(l)
 
 
-def compute_loss_single_depth(pred_depth,label,FLAGS):
+def compute_loss_single_depth(pred_depth,label,global_step,FLAGS):
 
     #=======
     #Depth loss
     #=======
     depth_loss = 0
     smooth_loss = 0
+    epsilon = 0.000001
+
+    global_stepf = tf.to_float(global_step)
+    depth_sig_weight = ease_out_quad(global_stepf, 0, FLAGS.depth_sig_weight, float(FLAGS.max_steps//3))
+    sig_params = {'deltas':[1,2,4,8,16], 'weights':[1,1,1,1,1], 'epsilon': 0.001}
+    #import pdb;pdb.set_trace()
+    pre_depth_sig = scale_invariant_gradient(tf.transpose(pred_depth[0], perm=[0,3,1,2]), **sig_params)
+    gt_depth_sig = scale_invariant_gradient(tf.transpose(label, perm=[0,3,1,2]), **sig_params)
+    loss_depth_sig = depth_sig_weight* pointwise_l2_loss(pre_depth_sig, gt_depth_sig, epsilon=epsilon)
+
+
     for s in range(FLAGS.num_scales):
 
         #=======
@@ -62,13 +73,18 @@ def compute_loss_single_depth(pred_depth,label,FLAGS):
         curr_label = tf.image.resize_area(label, 
             [int(FLAGS.resizedheight/(2**s)), int(FLAGS.resizedwidth/(2**s))])
 
-
+        
 
         diff = sops.replace_nonfinite(curr_label - pred_depth[s])
         curr_depth_error = tf.abs(diff)
-        depth_loss += tf.reduce_mean(curr_depth_error)*FLAGS.depth_weight
+        depth_loss += tf.reduce_mean(curr_depth_error)*FLAGS.depth_weight/(2**s)
 
-    return depth_loss,smooth_loss
+
+
+
+
+
+    return depth_loss,smooth_loss,loss_depth_sig
 
 
 

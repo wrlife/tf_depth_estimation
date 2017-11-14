@@ -50,16 +50,16 @@ flags.DEFINE_string("init_checkpoint_file", None, "Specific checkpoint file to i
 FLAGS = flags.FLAGS
 
 FLAGS.num_scales = 4
-FLAGS.smooth_weight = 5
-FLAGS.data_weight = 100
+FLAGS.smooth_weight = 10
+FLAGS.data_weight = 0
 
 FLAGS.optflow_weight = 0
 FLAGS.depth_weight = 500
 FLAGS.depth_weight_consist = 10
 FLAGS.depth_sig_weight = 1000
-FLAGS.explain_reg_weight = 50
-FLAGS.cam_weight_rot = 100
-FLAGS.cam_weight_tran = 1
+FLAGS.explain_reg_weight = 1
+FLAGS.cam_weight_rot = 160
+FLAGS.cam_weight_tran = 10
 
 
 FLAGS.resizedheight = 192
@@ -83,12 +83,19 @@ def single_depth_training(label,FLAGS,image_left,pred_depth_left,saver_pair,chec
     #============================================
     #First train a depth and camera estimation from image pair
     #============================================
+
+
     with tf.variable_scope("model_singledepth") as scope:
 
         with tf.name_scope("single_depth_prediction"):
             #estimate depth and optical flow from both left and right image
             batch, height, width, _ = image_left.get_shape().as_list()
-
+            
+            global_step_single = tf.Variable(0, 
+                                           name='global_step_single', 
+                                           trainable=False)
+            incr_global_step = tf.assign(global_step_single, 
+                                              global_step_single+1)
             #upsample
             #import pdb;pdb.set_trace()
             pred_depth_left_up = tf.image.resize_nearest_neighbor(pred_depth_left, [height, width])
@@ -98,14 +105,10 @@ def single_depth_training(label,FLAGS,image_left,pred_depth_left,saver_pair,chec
                                                   is_training=True)
 
 
-            depth_loss,smooth_loss = compute_loss_single_depth(pred_depth_single_left,label,FLAGS)
-            total_loss = depth_loss+smooth_loss
+            depth_loss,smooth_loss,loss_depth_sig = compute_loss_single_depth(pred_depth_single_left,label,global_step_single,FLAGS)
+            total_loss = depth_loss+smooth_loss+loss_depth_sig
 
-            global_step_single = tf.Variable(0, 
-                                           name='global_step_single', 
-                                           trainable=False)
-            incr_global_step = tf.assign(global_step_single, 
-                                              global_step_single+1)            
+            
             
 
 
@@ -113,6 +116,7 @@ def single_depth_training(label,FLAGS,image_left,pred_depth_left,saver_pair,chec
         tf.summary.scalar('losses/total_loss', total_loss)
         tf.summary.scalar('losses/smooth_loss', smooth_loss)
         tf.summary.scalar('losses/depth_loss', depth_loss)
+        tf.summary.scalar('losses/loss_depth_sig', loss_depth_sig)
 
 
         tf.summary.histogram("scale_depth", sops.replace_nonfinite(label))
@@ -402,24 +406,27 @@ def main(_):
 
 
             with tf.name_scope("pairwise_depth_train_op"):
-                pairwise_depth_train(image_left,image_right,label2,gt_right_cam,intrinsics,FLAGS)
+            #     pairwise_depth_train(image_left,image_right,label2,gt_right_cam,intrinsics,FLAGS)
 
 
             #import pdb;pdb.set_trace()
-            saver_pair = tf.train.Saver(tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'model_pairdepth'))
-            checkpoint_pair = tf.train.latest_checkpoint(FLAGS.checkpoint_dir)
+	            with tf.variable_scope("model_pairdepth") as scope:
 
-            with tf.name_scope("single_depth_train_op"):
+		            inputdata = tf.concat([image_left, image_right], axis=3)
 
-                inputdata = tf.concat([image_left, image_right], axis=3)
+		            pred_depth_left, pred_poses_right, pred_exp_logits_left, depth_net_endpoints_left = depth_net(inputdata,                                                    
+		                                                                                                is_training=True)
+		            saver_pair = tf.train.Saver(tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'model_pairdepth'))
+		            checkpoint_pair = tf.train.latest_checkpoint(FLAGS.checkpoint_dir)
 
-                pred_depth_left, pred_poses_right, pred_exp_logits_left, depth_net_endpoints_left = depth_net(inputdata,                                                    
-                                                                                                    is_training=True)
-
-                #Upsample depth
+            # with tf.name_scope("single_depth_train_op"):
 
 
-                single_depth_training(label,FLAGS,image_left,pred_depth_left[0],saver_pair,checkpoint_pair)
+
+            #Upsample depth
+
+
+            single_depth_training(label,FLAGS,image_left,pred_depth_left[0],saver_pair,checkpoint_pair)
 
 
 
