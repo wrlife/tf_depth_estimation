@@ -66,8 +66,8 @@ def compute_loss_single_depth(pred_depth,label,global_step,FLAGS):
         #=======
         #Smooth loss
         #=======
-        smooth_loss += FLAGS.smooth_weight/(2**s) * \
-            compute_smooth_loss(1.0/pred_depth[s])
+        # smooth_loss += FLAGS.smooth_weight/(2**s) * \
+        #     compute_smooth_loss(1.0/pred_depth[s])
 
 
         curr_label = tf.image.resize_area(label, 
@@ -191,7 +191,7 @@ def compute_loss_pairwise_depth(image_left, image_right,
             #=======
             diff = sops.replace_nonfinite(curr_label - pred_depth_left[s-2])
             curr_depth_error = tf.abs(diff)
-            depth_loss += tf.reduce_mean(curr_depth_error)*FLAGS.depth_weight/(2**(s-2))
+            depth_loss += tf.reduce_mean(curr_depth_error)*FLAGS.depth_weight/(2**(s))
 
 
 
@@ -228,38 +228,38 @@ def compute_loss_pairwise_depth(image_left, image_right,
             #exp mask
             #===============
 
-            ref_exp_mask = get_reference_explain_mask(s,FLAGS)
+            # ref_exp_mask = get_reference_explain_mask(s,FLAGS)
             
-            if FLAGS.explain_reg_weight > 0:
-                curr_exp_logits_left = tf.slice(pred_exp_logits_left[s-2], 
-                                           [0, 0, 0, 0], 
-                                           [-1, -1, -1, 2])
-                exp_loss += FLAGS.explain_reg_weight * \
-                    compute_exp_reg_loss(curr_exp_logits_left,
-                                              ref_exp_mask)
-                curr_exp_left = tf.nn.softmax(curr_exp_logits_left)
-            # Photo-consistency loss weighted by explainability
-            if FLAGS.explain_reg_weight > 0:
-                pixel_loss += tf.reduce_mean(curr_proj_error_left * \
-                    tf.expand_dims(curr_exp_left[:,:,:,1], -1))*FLAGS.data_weight/(2**(s-2))
+            # if FLAGS.explain_reg_weight > 0:
+            #     curr_exp_logits_left = tf.slice(pred_exp_logits_left[s-2], 
+            #                                [0, 0, 0, 0], 
+            #                                [-1, -1, -1, 2])
+            #     exp_loss += FLAGS.explain_reg_weight * \
+            #         compute_exp_reg_loss(curr_exp_logits_left,
+            #                                   ref_exp_mask)
+            #     curr_exp_left = tf.nn.softmax(curr_exp_logits_left)
+            # # Photo-consistency loss weighted by explainability
+            # if FLAGS.explain_reg_weight > 0:
+            #     pixel_loss += tf.reduce_mean(curr_proj_error_left * \
+            #         tf.expand_dims(curr_exp_left[:,:,:,1], -1))*FLAGS.data_weight/(2**(s-2))
 
-            exp_mask = tf.expand_dims(curr_exp_left[:,:,:,1], -1)                    
-            exp_mask_all.append(exp_mask)
+            # exp_mask = tf.expand_dims(curr_exp_left[:,:,:,1], -1)                    
+            # exp_mask_all.append(exp_mask)
 
 
             
-            if FLAGS.explain_reg_weight > 0:
-                curr_exp_logits_right = tf.slice(pred_exp_logits_right[s-2], 
-                                           [0, 0, 0, 0], 
-                                           [-1, -1, -1, 2])
-                exp_loss += FLAGS.explain_reg_weight * \
-                    compute_exp_reg_loss(curr_exp_logits_right,
-                                              ref_exp_mask)
-                curr_exp_right = tf.nn.softmax(curr_exp_logits_right)
-            # Photo-consistency loss weighted by explainability
-            if FLAGS.explain_reg_weight > 0:
-                pixel_loss += tf.reduce_mean(curr_proj_error_right * \
-                    tf.expand_dims(curr_exp_right[:,:,:,1], -1))*FLAGS.data_weight/(2**(s-2))
+            # if FLAGS.explain_reg_weight > 0:
+            #     curr_exp_logits_right = tf.slice(pred_exp_logits_right[s-2], 
+            #                                [0, 0, 0, 0], 
+            #                                [-1, -1, -1, 2])
+            #     exp_loss += FLAGS.explain_reg_weight * \
+            #         compute_exp_reg_loss(curr_exp_logits_right,
+            #                                   ref_exp_mask)
+            #     curr_exp_right = tf.nn.softmax(curr_exp_logits_right)
+            # # Photo-consistency loss weighted by explainability
+            # if FLAGS.explain_reg_weight > 0:
+            #     pixel_loss += tf.reduce_mean(curr_proj_error_right * \
+            #         tf.expand_dims(curr_exp_right[:,:,:,1], -1))*FLAGS.data_weight/(2**(s-2))
 
 
             # if not depth_weight_consist is None:
@@ -289,4 +289,4 @@ def compute_loss_pairwise_depth(image_left, image_right,
 
 
 
-    return depth_loss, cam_loss, pixel_loss, consist_loss, loss_depth_sig, exp_loss, left_image_all, right_image_all, proj_image_left_all,proj_image_right_all,exp_mask_all,proj_error_stack_all
+    return depth_loss, cam_loss, pixel_loss, consist_loss, loss_depth_sig, exp_loss, left_image_all, right_image_all, proj_image_left_all,proj_image_right_all,proj_error_stack_all
