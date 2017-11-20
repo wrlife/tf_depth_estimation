@@ -125,17 +125,19 @@ def compute_loss_pairwise_depth(image_left, image_right,
 
         #Adaptively changing weights
         #import pdb;pdb.set_trace()
-        GT_proj_l2r = pose_vec2mat(gt_right_cam,'angleaxis')
+        GT_proj_l2r = pose_vec2mat(gt_right_cam,'eular')
         global_stepf = tf.to_float(global_step)
         depth_sig_weight = ease_out_quad(global_stepf, 0, FLAGS.depth_sig_weight, float(FLAGS.max_steps//3))
         #data_weight = ease_out_quad(global_stepf, 0, FLAGS.data_weight, float(FLAGS.max_steps//3))
-        depth_weight_consist = ease_out_quad_zero(global_stepf, 0, FLAGS.depth_weight_consist, float(FLAGS.max_steps//3))                      
+        # depth_weight_consist = ease_out_quad_zero(global_stepf, 0, FLAGS.depth_weight_consist, float(FLAGS.max_steps//3))                      
 
 
         # proj_l2r = tf.cond(depth_weight_consist > 0, lambda: pose_vec2mat(pred_poses_right[:,0,:],'angleaxis'), lambda: GT_proj_l2r)
         # proj_r2l = tf.cond(depth_weight_consist > 0, lambda: pose_vec2mat(pred_poses_left[:,0,:],'angleaxis'), lambda: tf.matrix_inverse(GT_proj_l2r))
-        proj_l2r = pose_vec2mat(pred_poses_right[:,0,:],'angleaxis')
-        proj_r2l = pose_vec2mat(pred_poses_left[:,0,:],'angleaxis')
+        
+        #import pdb;pdb.set_trace()
+        proj_l2r = pose_vec2mat(pred_poses_right[:,0,:],'eular')
+        proj_r2l = pose_vec2mat(pred_poses_left[:,0,:],'eular')
  
         # proj_l2r_loss = pose_vec2mat(pred_poses_right[:,0,:],'angleaxis')
         # proj_r2l_loss = pose_vec2mat(pred_poses_left[:,0,:],'angleaxis')
@@ -145,12 +147,12 @@ def compute_loss_pairwise_depth(image_left, image_right,
         #=======
         #sig depth loss
         #=======
-        if not depth_sig_weight is None:
-            sig_params = {'deltas':[1,2,4], 'weights':[1,1,1], 'epsilon': 0.001}
-            #import pdb;pdb.set_trace()
-            pre_depth_sig = scale_invariant_gradient(tf.transpose(pred_depth_left[0], perm=[0,3,1,2]), **sig_params)
-            gt_depth_sig = scale_invariant_gradient(tf.transpose(label, perm=[0,3,1,2]), **sig_params)
-            loss_depth_sig += depth_sig_weight* pointwise_l2_loss(pre_depth_sig, gt_depth_sig, epsilon=epsilon)
+
+        sig_params = {'deltas':[1,2,4], 'weights':[1,1,1], 'epsilon': 0.001}
+        #import pdb;pdb.set_trace()
+        pre_depth_sig = scale_invariant_gradient(tf.transpose(pred_depth_left[0], perm=[0,3,1,2]), **sig_params)
+        gt_depth_sig = scale_invariant_gradient(tf.transpose(label, perm=[0,3,1,2]), **sig_params)
+        loss_depth_sig += depth_sig_weight* pointwise_l2_loss(pre_depth_sig, gt_depth_sig, epsilon=epsilon)
 
 
         #=============
@@ -172,10 +174,10 @@ def compute_loss_pairwise_depth(image_left, image_right,
             #Smooth loss
             #=======
             # smooth_loss += FLAGS.smooth_weight/(2**s) * \
-            #     compute_smooth_loss(1.0/pred_depth_left[s])
+            #     compute_smooth_loss(1.0/pred_depth_left[s-2])
 
             # smooth_loss += FLAGS.smooth_weight/(2**s) * \
-            #     compute_smooth_loss(1.0/pred_depth_right[s])
+            #     compute_smooth_loss(1.0/pred_depth_right[s-2])
 
 
             curr_label = tf.image.resize_area(label, 
@@ -185,7 +187,7 @@ def compute_loss_pairwise_depth(image_left, image_right,
             curr_image_right = tf.image.resize_area(image_right, 
                 [int(FLAGS.resizedheight/(2**s)), int(FLAGS.resizedwidth/(2**s))]) 
 
-
+            #import pdb;pdb.set_trace()
             #=======
             #Depth loss
             #=======
@@ -203,8 +205,8 @@ def compute_loss_pairwise_depth(image_left, image_right,
                         
             curr_proj_image_left, src_pixel_coords_right,wmask_left, warp_depth_right,_= projective_inverse_warp(
                 curr_image_right, 
-                tf.squeeze(1.0/(pred_depth_left[s-2]), axis=3),
-                proj_l2r,
+                tf.squeeze(1.0/(curr_label), axis=3),
+                GT_proj_l2r,
                 intrinsics[:,s,:,:],
                 format='matrix'
                 )
@@ -213,7 +215,7 @@ def compute_loss_pairwise_depth(image_left, image_right,
             curr_proj_image_right, src_pixel_coords_left,wmask_right, warp_depth_left, _ = projective_inverse_warp(
                 curr_image_left, 
                 tf.squeeze(1.0/(pred_depth_right[s-2]), axis=3),
-                proj_r2l,
+                tf.matrix_inverse(GT_proj_l2r),
                 intrinsics[:,s,:,:],
                 format='matrix'
                 )
@@ -224,9 +226,9 @@ def compute_loss_pairwise_depth(image_left, image_right,
 
                                        
 
-            #===============
-            #exp mask
-            #===============
+            # #===============
+            # #exp mask
+            # #===============
 
             # ref_exp_mask = get_reference_explain_mask(s,FLAGS)
             
@@ -241,7 +243,8 @@ def compute_loss_pairwise_depth(image_left, image_right,
             # # Photo-consistency loss weighted by explainability
             # if FLAGS.explain_reg_weight > 0:
             #     pixel_loss += tf.reduce_mean(curr_proj_error_left * \
-            #         tf.expand_dims(curr_exp_left[:,:,:,1], -1))*FLAGS.data_weight/(2**(s-2))
+
+            #         tf.expand_dims(curr_exp_left[:,:,:,1], -1))*FLAGS.data_weight/(2**(s))
 
             # exp_mask = tf.expand_dims(curr_exp_left[:,:,:,1], -1)                    
             # exp_mask_all.append(exp_mask)
@@ -259,7 +262,7 @@ def compute_loss_pairwise_depth(image_left, image_right,
             # # Photo-consistency loss weighted by explainability
             # if FLAGS.explain_reg_weight > 0:
             #     pixel_loss += tf.reduce_mean(curr_proj_error_right * \
-            #         tf.expand_dims(curr_exp_right[:,:,:,1], -1))*FLAGS.data_weight/(2**(s-2))
+            #         tf.expand_dims(curr_exp_right[:,:,:,1], -1))*FLAGS.data_weight/(2**(s))
 
 
             # if not depth_weight_consist is None:

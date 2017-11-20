@@ -23,6 +23,7 @@ class DataLoader(object):
         self.num_scales = num_scales
         self.resizedheight = 224
         self.resizedwidth = 224
+        self.depth_dir = '/home/wrlife/project/Unsupervised_Depth_Estimation/scripts/data/goodimages/'
 
 
     def load_train_batch(self):
@@ -35,24 +36,24 @@ class DataLoader(object):
         image_paths_queue = tf.convert_to_tensor(file_list['image_file_list'], dtype=tf.string)
         depth_paths_queue = tf.convert_to_tensor(file_list['gt_depth_file_list'], dtype=tf.string)
         cam_paths_queue = tf.convert_to_tensor(file_list['cam_file_list'], dtype=tf.string)
-        #tgt2src_paths_queue = tf.convert_to_tensor(file_list['tgt2src_proj_list'], dtype=tf.string)
+        tgt2src_paths_queue = tf.convert_to_tensor(file_list['tgt2src_proj_list'], dtype=tf.string)
 
         # Makes an input queue
         input_queue = tf.train.slice_input_producer([image_paths_queue,
                                                      depth_paths_queue,
-                                                     cam_paths_queue
-                                                     ],
+                                                     cam_paths_queue,
+                                                     tgt2src_paths_queue],
                                                      num_epochs = 1500,
                                                      shuffle=True)
 
         #,tgt2scr_projs,m_scale
-        image_all, label, intrinsics = self.read_images_from_disk(input_queue)
+        image_all, label, intrinsics,tgt2scr_projs = self.read_images_from_disk(input_queue)
 
 
 
         # Form training batches
-        src_image_stack, tgt_image ,label_batch,  intrinsics  = \
-                tf.train.batch([image_all[ :, :, 3:], image_all[ :, :, :3], label, intrinsics], 
+        src_image_stack, tgt_image ,label_batch,  intrinsics, tgt2scr_projs  = \
+                tf.train.batch([image_all[ :, :, 3:], image_all[ :, :, :3], label, intrinsics,tgt2scr_projs], 
                                batch_size=self.batch_size)
 
 
@@ -60,7 +61,7 @@ class DataLoader(object):
             intrinsics, self.num_scales,tf.cast(self.resizedwidth,tf.float32)/self.image_width,tf.cast(self.resizedheight,tf.float32)/self.image_height)
         
         #import pdb;pdb.set_trace()
-        return tgt_image, src_image_stack, label_batch, intrinsics
+        return tgt_image, src_image_stack, label_batch, intrinsics, tgt2scr_projs
     
 
     def read_labeled_image_list(self):
@@ -83,16 +84,17 @@ class DataLoader(object):
             frame_ids[i] + '.jpg') for i in range(len(frames))]
         cam_file_list = [os.path.join(self.dataset_dir, subfolders[i], 
             frame_ids[i] + '_cam.txt') for i in range(len(frames))]
-        gt_depth_file_list = [os.path.join(self.dataset_dir, subfolders[i], 
-            'frame'+frame_ids[i] + '.jpg'+'_z.bin') for i in range(len(frames))]
-
+        gt_depth_file_list = [os.path.join(self.depth_dir, subfolders[i],'normalized_sfs_results', 
+            'frame'+frame_ids[i].split('_')[0] + '.jpg'+'_z.bin') for i in range(len(frames))]
+        tgt2src_proj_list = [os.path.join(self.dataset_dir, subfolders[i], 
+            frame_ids[i] + '_tgt2src_proj.txt') for i in range(len(frames))]
         
 
         all_list = {}
         all_list['image_file_list'] = image_file_list
         all_list['cam_file_list'] = cam_file_list
         all_list['gt_depth_file_list'] = gt_depth_file_list
-
+        all_list['tgt2src_proj_list'] = tgt2src_proj_list
 
 
         return all_list
@@ -111,7 +113,7 @@ class DataLoader(object):
         image_file = tf.read_file(input_queue[0])
         label_file = tf.read_file(input_queue[1])
         cam_file = tf.read_file(input_queue[2])
-
+        tgt2src_proj_file = tf.read_file(input_queue[3])
      
 
         #=====================
@@ -123,7 +125,7 @@ class DataLoader(object):
             image_seq = tf.to_float(tf.image.resize_images(tf.image.decode_jpeg(image_file),[self.resizedheight,self.resizedwidth*2]))
             #image_seq = tf.to_float(tf.image.decode_jpeg(image_file))
 
-        #image_seq = image_seq/255.0
+        image_seq = image_seq/255.0-0.5
         tgt_image, src_image_stack = \
             self.unpack_image_sequence(
                 image_seq, self.resizedheight, self.resizedwidth, self.num_source)
@@ -162,22 +164,23 @@ class DataLoader(object):
         intrinsics = tf.reshape(raw_cam_vec, [3, 3])
 
 
-        # #=====================
-        # #tgt2scr_project
-        # #=====================
-        # rec_def = []
-        # for i in range(8):
-        #     rec_def.append([1.])
-        # raw_tgt2src_vec = tf.decode_csv(tgt2src_proj_file, 
-        #                             record_defaults=rec_def,field_delim = ' ')
+        #=====================
+        #tgt2scr_project
+        #=====================
+        
+        rec_def = []
+        for i in range(6):
+            rec_def.append([1.])
+        raw_tgt2src_vec = tf.decode_csv(tgt2src_proj_file, 
+                                    record_defaults=rec_def,field_delim = ',')
 
         #import pdb;pdb.set_trace()
         # raw_tgt2src_vec = raw_tgt2src_vec[:-1]
         # m_scale = raw_tgt2src_vec[-1]
-        # tgt2scr_projs = raw_tgt2src_vec[:-1]
+        tgt2scr_projs = raw_tgt2src_vec
         #tgt2scr_projs = tf.reshape(raw_tgt2src_vec, [2, 4, 4])
 
-        return image_all, label, intrinsics#,tgt2scr_projs,m_scale
+        return image_all, label, intrinsics,tgt2scr_projs
 
 
     def data_augmentation(self, im, out_h, out_w):
