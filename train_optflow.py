@@ -93,9 +93,10 @@ def main(_):
             pred_disp, depth_net_endpoints_left = disp_net(img_pair, 
                                                   is_training=True)
 
+            pred_depth = pred_disp
             #pred_depth = [tf.expand_dims(d[:,:,:,0],-1) for d in pred_disp]
-            pred_optflow_x = [tf.expand_dims(d[:,:,:,0],-1) for d in pred_disp]
-            pred_optflow_y = [tf.expand_dims(d[:,:,:,1],-1) for d in pred_disp]
+            # pred_optflow_x = [tf.expand_dims(d[:,:,:,0],-1) for d in pred_disp]
+            # pred_optflow_y = [tf.expand_dims(d[:,:,:,1],-1) for d in pred_disp]
                 
                 
         #============================================   
@@ -254,7 +255,7 @@ def main(_):
 
 
                 tf.summary.image('scale%d_pred_depth' % s,
-                    pred_depth[s])
+                    1.0/pred_depth[s])
 
 
             #tf.get_variable_scope().reuse_variables()

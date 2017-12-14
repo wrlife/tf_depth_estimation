@@ -47,7 +47,7 @@ def Demon_Dataloader():
 
     top_output = ('IMAGE_PAIR', 'MOTION', 'DEPTH', 'INTRINSICS')
 
-    batch_size = 12
+    batch_size = 16
 
     reader_params = {
         'batch_size': batch_size,
@@ -57,7 +57,7 @@ def Demon_Dataloader():
         'builder_threads': 4,
         'scaled_width': 256,
         'scaled_height': 192,
-        'norm_trans_scale_depth': False,        
+        'norm_trans_scale_depth': True,        
         'top_output': top_output,
         'scene_pool_size': 650,
         'augment_rot180': 0.5,

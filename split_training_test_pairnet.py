@@ -17,7 +17,7 @@ from nets_optflow_depth import *
 from utils_lr import *
 from tfutils import *
 
-from my_losses import *
+from my_losses_pairtest import *
 
 flags = tf.app.flags
 flags.DEFINE_string("dataset_dir", "", "Dataset directory")
@@ -40,7 +40,7 @@ flags.DEFINE_integer("save_latest_freq", 5000, \
     "Save the latest model every save_latest_freq iterations (overwrites the previous latest model)")
 
 flags.DEFINE_integer("max_steps_single", 300001, "Maximum number of training iterations")
-flags.DEFINE_integer("max_steps", 235001, "Maximum number of training iterations")
+flags.DEFINE_integer("max_steps", 300001, "Maximum number of training iterations")
 
 flags.DEFINE_integer("summary_freq", 100, "Logging every log_freq iterations")
 flags.DEFINE_string("init_checkpoint_file", None, "Specific checkpoint file to initialize from")

@@ -50,15 +50,16 @@ def compute_loss_single_depth(pred_depth,label,global_step,FLAGS):
     #=======
     depth_loss = 0
     smooth_loss = 0
+    loss_depth_sig = 0
     epsilon = 0.000001
 
     global_stepf = tf.to_float(global_step)
     depth_sig_weight = ease_out_quad(global_stepf, 0, FLAGS.depth_sig_weight, float(FLAGS.max_steps//3))
-    sig_params = {'deltas':[1,2,4,8,16], 'weights':[1,1,1,1,1], 'epsilon': 0.001}
+    #sig_params = {'deltas':[1,2,4,8,16], 'weights':[1,1,1,1,1], 'epsilon': 0.001}
     #import pdb;pdb.set_trace()
-    pre_depth_sig = scale_invariant_gradient(tf.transpose(pred_depth[0], perm=[0,3,1,2]), **sig_params)
-    gt_depth_sig = scale_invariant_gradient(tf.transpose(label, perm=[0,3,1,2]), **sig_params)
-    loss_depth_sig = depth_sig_weight* pointwise_l2_loss(pre_depth_sig, gt_depth_sig, epsilon=epsilon)
+    #pre_depth_sig = scale_invariant_gradient(tf.transpose(pred_depth[0], perm=[0,3,1,2]), **sig_params)
+    #gt_depth_sig = scale_invariant_gradient(tf.transpose(label, perm=[0,3,1,2]), **sig_params)
+    #loss_depth_sig = depth_sig_weight* pointwise_l2_loss(pre_depth_sig, gt_depth_sig, epsilon=epsilon)
 
 
     for s in range(FLAGS.num_scales):
@@ -74,11 +75,19 @@ def compute_loss_single_depth(pred_depth,label,global_step,FLAGS):
             [int(FLAGS.resizedheight/(2**s)), int(FLAGS.resizedwidth/(2**s))])
 
         
+        sig_params = {'deltas':[2], 'weights':[1], 'epsilon': 0.001}
+        #import pdb;pdb.set_trace()
+        pre_depth_sig = scale_invariant_gradient(tf.transpose(pred_depth[s], perm=[0,3,1,2]), **sig_params)
+        gt_depth_sig = scale_invariant_gradient(tf.transpose(curr_label, perm=[0,3,1,2]), **sig_params)
+        loss_depth_sig += depth_sig_weight* pointwise_l2_loss(pre_depth_sig, gt_depth_sig, epsilon=epsilon)
+        
+        
+        
 
         diff = sops.replace_nonfinite(curr_label - pred_depth[s])
         curr_depth_error = tf.abs(diff)
         depth_loss += tf.reduce_mean(curr_depth_error)*FLAGS.depth_weight/(2**s)
-
+        #depth_loss += pointwise_l2_loss(curr_label, pred_depth[s], epsilon=epsilon)*FLAGS.depth_weight/(2**s)
 
 
 
@@ -125,7 +134,7 @@ def compute_loss_pairwise_depth(image_left, image_right,
 
         #Adaptively changing weights
         #import pdb;pdb.set_trace()
-        GT_proj_l2r = pose_vec2mat(gt_right_cam,'eular')
+        GT_proj_l2r = pose_vec2mat(gt_right_cam,'angleaxis')
         global_stepf = tf.to_float(global_step)
         depth_sig_weight = ease_out_quad(global_stepf, 0, FLAGS.depth_sig_weight, float(FLAGS.max_steps//3))
         #data_weight = ease_out_quad(global_stepf, 0, FLAGS.data_weight, float(FLAGS.max_steps//3))
@@ -136,23 +145,15 @@ def compute_loss_pairwise_depth(image_left, image_right,
         # proj_r2l = tf.cond(depth_weight_consist > 0, lambda: pose_vec2mat(pred_poses_left[:,0,:],'angleaxis'), lambda: tf.matrix_inverse(GT_proj_l2r))
         
         #import pdb;pdb.set_trace()
-        proj_l2r = pose_vec2mat(pred_poses_right[:,0,:],'eular')
-        proj_r2l = pose_vec2mat(pred_poses_left[:,0,:],'eular')
+        proj_l2r = pose_vec2mat(pred_poses_right[:,0,:],'angleaxis')
+        proj_r2l = pose_vec2mat(pred_poses_left[:,0,:],'angleaxis')
  
         # proj_l2r_loss = pose_vec2mat(pred_poses_right[:,0,:],'angleaxis')
         # proj_r2l_loss = pose_vec2mat(pred_poses_left[:,0,:],'angleaxis')
 
 
 
-        #=======
-        #sig depth loss
-        #=======
 
-        sig_params = {'deltas':[1,2,4], 'weights':[1,1,1], 'epsilon': 0.001}
-        #import pdb;pdb.set_trace()
-        pre_depth_sig = scale_invariant_gradient(tf.transpose(pred_depth_left[0], perm=[0,3,1,2]), **sig_params)
-        gt_depth_sig = scale_invariant_gradient(tf.transpose(label, perm=[0,3,1,2]), **sig_params)
-        loss_depth_sig += depth_sig_weight* pointwise_l2_loss(pre_depth_sig, gt_depth_sig, epsilon=epsilon)
 
 
         #=============
@@ -169,7 +170,10 @@ def compute_loss_pairwise_depth(image_left, image_right,
 
 
         for s in range(2,FLAGS.num_scales):
+        
 
+            
+            
             #=======
             #Smooth loss
             #=======
@@ -187,6 +191,19 @@ def compute_loss_pairwise_depth(image_left, image_right,
             curr_image_right = tf.image.resize_area(image_right, 
                 [int(FLAGS.resizedheight/(2**s)), int(FLAGS.resizedwidth/(2**s))]) 
 
+
+            
+            #=======
+            #sig depth loss
+            #=======
+
+            sig_params = {'deltas':[2], 'weights':[1], 'epsilon': 0.001}
+            #import pdb;pdb.set_trace()
+            pre_depth_sig = scale_invariant_gradient(tf.transpose(pred_depth_left[s-2], perm=[0,3,1,2]), **sig_params)
+            gt_depth_sig = scale_invariant_gradient(tf.transpose(curr_label, perm=[0,3,1,2]), **sig_params)
+            loss_depth_sig += depth_sig_weight* pointwise_l2_loss(pre_depth_sig, gt_depth_sig, epsilon=epsilon)
+            
+            
             #import pdb;pdb.set_trace()
             #=======
             #Depth loss
@@ -194,6 +211,7 @@ def compute_loss_pairwise_depth(image_left, image_right,
             diff = sops.replace_nonfinite(curr_label - pred_depth_left[s-2])
             curr_depth_error = tf.abs(diff)
             depth_loss += tf.reduce_mean(curr_depth_error)*FLAGS.depth_weight/(2**(s))
+            #depth_loss += pointwise_l2_loss(curr_label, pred_depth_left[s-2], epsilon=epsilon)*FLAGS.depth_weight/(2**s)
 
 
 

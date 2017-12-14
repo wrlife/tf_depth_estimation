@@ -7,8 +7,8 @@ import numpy as np
 import tensorflow.contrib.slim.nets
 from tensorflow.contrib.slim.python.slim.learning import train_step
 
-from imageselect_Dataloader_optflow_dim11 import DataLoader
-#from Demon_Data_loader import *
+#from imageselect_Dataloader_optflow_dim11 import DataLoader
+from Demon_Data_loader import *
 
 import os
 
@@ -18,6 +18,10 @@ from utils_lr import *
 from tfutils import *
 
 from my_losses import *
+from my_summary import *
+
+import PIL.Image as pil
+from PIL import Image
 
 flags = tf.app.flags
 flags.DEFINE_string("dataset_dir", "", "Dataset directory")
@@ -28,7 +32,7 @@ flags.DEFINE_integer("image_height", 192, "The size of of a sample batch")
 flags.DEFINE_integer("image_width", 256, "The size of of a sample batch")
 flags.DEFINE_float("learning_rate", 0.0002, "Learning rate of for adam")
 flags.DEFINE_float("beta1", 0.9, "Momentum term of adam")
-flags.DEFINE_integer("batch_size", 16, "The size of of a sample batch")
+flags.DEFINE_integer("batch_size", 1, "The size of of a sample batch")
 flags.DEFINE_string("pretrain_weight_dir", "./pretrained", "Directory name to pretrained weights")
 flags.DEFINE_integer("validation_check", 100, "Directory name to pretrained weights")
 flags.DEFINE_integer("num_sources", 2, "number of sources")
@@ -40,8 +44,8 @@ flags.DEFINE_integer("save_latest_freq", 5000, \
     "Save the latest model every save_latest_freq iterations (overwrites the previous latest model)")
 
 
-flags.DEFINE_integer("max_steps_single", 200001, "Maximum number of training iterations")
-flags.DEFINE_integer("max_steps", 200001, "Maximum number of training iterations")
+flags.DEFINE_integer("max_steps_single", 150001, "Maximum number of training iterations")
+flags.DEFINE_integer("max_steps", 600001, "Maximum number of training iterations")
 
 
 flags.DEFINE_integer("summary_freq", 100, "Logging every log_freq iterations")
@@ -87,24 +91,27 @@ def single_depth_training(label,FLAGS,image_left,pred_depth_left,saver_pair,chec
     #============================================
 
 
+    global_step_single = tf.Variable(0, 
+                                   name='global_step_single', 
+                                   trainable=False)
+    incr_global_step = tf.assign(global_step_single, 
+                                      global_step_single+1)
+
+
     with tf.variable_scope("model_singledepth") as scope:
 
         #estimate depth and optical flow from both left and right image
 
         batch, height, width, _ = image_left.get_shape().as_list()
         
-        global_step_single = tf.Variable(0, 
-                                       name='global_step_single', 
-                                       trainable=False)
-        incr_global_step = tf.assign(global_step_single, 
-                                          global_step_single+1)
+
         #upsample
         #import pdb;pdb.set_trace()
         pred_depth_left_up = tf.image.resize_nearest_neighbor(pred_depth_left, [height, width])
 
         inputdata = tf.concat([pred_depth_left_up,image_left], axis=3)
         pred_depth_single_left,depth_endpoints = disp_net(inputdata,                                                 
-                                              is_training=False)
+                                              is_training=True)
 
 
         depth_loss,smooth_loss,loss_depth_sig = compute_loss_single_depth(pred_depth_single_left,label,global_step_single,FLAGS)
@@ -115,31 +122,17 @@ def single_depth_training(label,FLAGS,image_left,pred_depth_left,saver_pair,chec
 
 
     with tf.name_scope("train_op"):
-        tf.summary.scalar('losses/total_loss', total_loss)
-        tf.summary.scalar('losses/smooth_loss', smooth_loss)
-        tf.summary.scalar('losses/depth_loss', depth_loss)
-        tf.summary.scalar('losses/loss_depth_sig', loss_depth_sig)
+        
+        #Create summary for visualization
+        single_net_summary(total_loss,smooth_loss,depth_loss,loss_depth_sig,label,
+                                image_left,pred_depth_single_left,
+                                pred_depth_left)
 
 
-        tf.summary.histogram("scale_depth", sops.replace_nonfinite(label))
-        tf.summary.histogram('scale%d_pred_depth_single_left' % 0,
-            pred_depth_single_left[0])
+        learning_rate = tf.train.exponential_decay(FLAGS.learning_rate, global_step_single,
+                                                   10000, 0.9, staircase=True)
 
-        tf.summary.image('left_image' , \
-                         image_left)
-               
-        tf.summary.image('gt_depth' , \
-                         label)
-        tf.summary.image('left_image' , \
-                         pred_depth_single_left[0])
-        tf.summary.image('left_image_pair' , \
-                         pred_depth_left)        
 
-        #tf.get_variable_scope().reuse_variables()
-        # Specify the optimization scheme:
-        # with tf.variable_scope("scope_global_step") as scope_global_step:
-        #     global_step = tf.get_variable('global_step', [], initializer=tf.constant_initializer(0), trainable=False)
-        #with tf.variable_scope(tf.get_variable_scope(), reuse=False):
         optimizer = tf.train.AdamOptimizer(FLAGS.learning_rate,FLAGS.beta1)
 
         # create_train_op that ensures that when we evaluate it to get the loss,
@@ -147,12 +140,11 @@ def single_depth_training(label,FLAGS,image_left,pred_depth_left,saver_pair,chec
         # train_op = slim.learning.create_train_op(total_loss, optimizer)
 
 
-        train_op = slim.learning.create_train_op(total_loss, optimizer, variables_to_train=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,"model_singledepth"))
+        train_op = slim.learning.create_train_op(total_loss, optimizer,variables_to_train=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope="model_singledepth"))
 
 
 
-        saver = tf.train.Saver(tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'model_singledepth')+[global_step_single],
-                                     max_to_keep=10)
+        saver = tf.train.Saver(tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope="model_singledepth"))
 
 
            
@@ -167,6 +159,7 @@ def single_depth_training(label,FLAGS,image_left,pred_depth_left,saver_pair,chec
             coord = tf.train.Coordinator()
             threads = tf.train.start_queue_runners(sess=sess,coord=coord)
             
+            #import pdb;pdb.set_trace()
             if FLAGS.continue_train_single:
                 if FLAGS.init_checkpoint_file is None:
                     checkpoint = tf.train.latest_checkpoint(FLAGS.checkpoint_dir_single)
@@ -230,8 +223,8 @@ def pairwise_depth_train(image_left,image_right,label,gt_right_cam,intrinsics,FL
         incr_global_step = tf.assign(global_step,
                                           global_step+1)
 
-        pred_depth_left, pred_poses_right, pred_exp_logits_left, depth_net_endpoints_left = depth_net(inputdata,                                                     
-                                                                                            is_training=False)  
+        pred_depth_left, pred_poses_right, pred_exp_logits_left, depth_net_endpoints_left = depth_net(inputdata,               
+                                                                                            is_training=True)  
 
         #============================                                                                       
         #Using right left to predict
@@ -240,9 +233,22 @@ def pairwise_depth_train(image_left,image_right,label,gt_right_cam,intrinsics,FL
 
         scope.reuse_variables()
         inputdata = tf.concat([image_right, image_left], axis=3)
-        pred_depth_right, pred_poses_left, pred_exp_logits_right, depth_net_endpoints_right = depth_net(inputdata,                                                
-                                                                                            is_training=False)
-
+        pred_depth_right, pred_poses_left, pred_exp_logits_right, depth_net_endpoints_right = depth_net(inputdata,             
+                                                                                            is_training=True)
+        
+        
+        #==================
+        #Validation
+        #==================
+        valleft = tf.placeholder(shape=[1, FLAGS.resizedheight, FLAGS.resizedwidth, 3], dtype=tf.float32)
+        valright = tf.placeholder(shape=[1, FLAGS.resizedheight, FLAGS.resizedwidth, 3], dtype=tf.float32)
+        #Estimate depth of valid image
+        inputdata_val = tf.concat([valright,valleft], axis=3)
+        #inputdata_val = tf.concat([tf.expand_dims(image_left[1,:,:,:], 0), tf.expand_dims(image_right[1,:,:,:], 0)], axis=3)
+        val_depth_left, val_poses_right, val_exp_logits_left, val_net_endpoints_left = depth_net(inputdata_val,               
+                                                                                                      is_training=False)
+        
+        
 
 
     #===============
@@ -258,7 +264,9 @@ def pairwise_depth_train(image_left,image_right,label,gt_right_cam,intrinsics,FL
                                                                                                                                                                                     global_step)        
     
     total_loss = depth_loss +cam_loss + pixel_loss+ consist_loss+loss_depth_sig +exp_loss
-
+    
+    
+    
 
     #============================================
     #Start training
@@ -279,7 +287,19 @@ def pairwise_depth_train(image_left,image_right,label,gt_right_cam,intrinsics,FL
 
         tf.summary.histogram('scale%d_pred_depth_single_right' % 0,
             pred_depth_right[0])
-
+        
+        #Val summary
+        tf.summary.image('val depth' , \
+                         1.0/val_depth_left[0])
+        tf.summary.image('val depth inv' , \
+                         val_depth_left[0])
+        tf.summary.image('val image' , \
+                         valright)
+        
+        tf.summary.histogram('image value range',
+            left_image_all[0])
+        
+        
         for s in range(0,FLAGS.num_scales-2):
             
             tf.summary.image('scale%d_left_image' % s, \
@@ -304,20 +324,25 @@ def pairwise_depth_train(image_left,image_right,label,gt_right_cam,intrinsics,FL
             tf.summary.image('scale%d_project_error_right' % s,
                 proj_error_stack_all[s])
 
+            
+            
+            
+        learning_rate = tf.train.exponential_decay(FLAGS.learning_rate, global_step,
+                                                   10000, 0.96, staircase=True)
+            
+ 
+        optimizer = tf.train.AdamOptimizer(learning_rate,FLAGS.beta1)
 
-        optimizer = tf.train.AdamOptimizer(FLAGS.learning_rate,FLAGS.beta1)
+        train_op = slim.learning.create_train_op(total_loss, optimizer)
 
-        train_op = slim.learning.create_train_op(total_loss, optimizer, variables_to_train=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,"model_pairdepth"))
-
-
-        saver = tf.train.Saver(tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'model_pairdepth')+[global_step],
-                                     max_to_keep=10)
+        saver = tf.train.Saver(tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope="model_pairdepth"))
 
         with tf.Session() as sess:
 
             merged = tf.summary.merge_all()
             train_writer = tf.summary.FileWriter(FLAGS.checkpoint_dir + '/sum',
                                                   sess.graph)
+           
 
             tf.initialize_all_variables().run()
             tf.initialize_local_variables().run()
@@ -340,15 +365,36 @@ def pairwise_depth_train(image_left,image_right,label,gt_right_cam,intrinsics,FL
                     "global_step": global_step,
                     "incr_global_step": incr_global_step
                 }
+                
 
+                results={}
                 if step % FLAGS.summary_freq == 0:
                     fetches["loss"] = total_loss
                     fetches["summary"] = merged
                     fetches["GT_cam"] = gt_right_cam
                     fetches["est_cam"] = pred_poses_right
                     fetches["est_cam_left"] = pred_poses_left
+                    
+                    #Validation
+                    fetches["val_depth"] = val_depth_left
+                    I = Image.open("./data/sculpture1.png")
+                    I1 = Image.open("./data/sculpture2.png")
 
-                results = sess.run(fetches)
+                    I = I.resize((FLAGS.resizedwidth, FLAGS.resizedheight),pil.ANTIALIAS)
+                    I1 = I1.resize((FLAGS.resizedwidth, FLAGS.resizedheight),pil.ANTIALIAS)
+
+                    I = np.array(I).astype(np.float32)/255.0 -0.5
+                    I1 = np.array(I1).astype(np.float32)/255.0 -0.5                    
+                    
+                    
+                    #feed_dict={valleft: I[np.newaxis,:],valright: I1[np.newaxis,:]}
+                    
+                    
+                    results = sess.run(fetches,feed_dict={valleft: I[np.newaxis,:],valright: I1[np.newaxis,:]})
+                else:
+                    results = sess.run(fetches)
+                    
+                    
                 gs = results["global_step"]
 
                 if step % FLAGS.summary_freq == 0:
@@ -389,25 +435,25 @@ def main(_):
         #Load image and labels
         #============================================
         with tf.name_scope("data_loading"):
-            imageloader = DataLoader(FLAGS.dataset_dir,
-                                     FLAGS.batch_size,
-                                     FLAGS.image_height, 
-                                     FLAGS.image_width,
-                                     FLAGS.num_sources,
-                                     FLAGS.num_scales,
-                                     'train')
+            # imageloader = DataLoader(FLAGS.dataset_dir,
+            #                          FLAGS.batch_size,
+            #                          FLAGS.image_height, 
+            #                          FLAGS.image_width,
+            #                          FLAGS.num_sources,
+            #                          FLAGS.num_scales,
+            #                          'train')
 
-            image_left, image_right, label, intrinsics, gt_right_cam = imageloader.load_train_batch()
-            label2 = tf.image.resize_area(label, 
-                [int(FLAGS.resizedheight/(2**2)), int(FLAGS.resizedwidth/(2**2))])
-            # data_dict,ground_truth,intrinsics = Demon_Dataloader()
-            # image_left, image_right = tf.split(value=data_dict['IMAGE_PAIR'], num_or_size_splits=2, axis=3)
-            # gt_right_cam = tf.concat([ground_truth['translation'],ground_truth['rotation']],axis=1)
-            # label = ground_truth['depth0']
-            # label2 = ground_truth['depth2']
+            # image_left, image_right, label, intrinsics, gt_right_cam = imageloader.load_train_batch()
+            # label2 = tf.image.resize_area(label, 
+            #     [int(FLAGS.resizedheight/(2**2)), int(FLAGS.resizedwidth/(2**2))])
+            data_dict,ground_truth,intrinsics = Demon_Dataloader()
+            image_left, image_right = tf.split(value=data_dict['IMAGE_PAIR'], num_or_size_splits=2, axis=3)
+            gt_right_cam = tf.concat([ground_truth['translation'],ground_truth['rotation']],axis=1)
+            label = ground_truth['depth0']
+            label2 = ground_truth['depth2']
 
 
-        #pairwise_depth_train(image_left,image_right,label2,gt_right_cam,intrinsics,FLAGS)
+        pairwise_depth_train(image_left,image_right,label2,gt_right_cam,intrinsics,FLAGS)
 
 
         #import pdb;pdb.set_trace()
@@ -417,20 +463,15 @@ def main(_):
             #scope.reuse_variables()
             pred_depth_left, pred_poses_right, pred_exp_logits_left, depth_net_endpoints_left = depth_net(inputdata,                                                    
                                                                                                 is_training=False)
-            saver_pair = tf.train.Saver(tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 'model_pairdepth'))
+            saver_pair = tf.train.Saver(tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope="model_pairdepth"))
             checkpoint_pair = tf.train.latest_checkpoint(FLAGS.checkpoint_dir)
 
-        # with tf.name_scope("single_depth_train_op"):
 
 
-
-        #Upsample depth
-
-
-        FLAGS.depth_weight = 10
-        FLAGS.depth_sig_weight = 20
+        # FLAGS.depth_weight = 1
+        # FLAGS.depth_sig_weight = 2
         
-        single_depth_training(label,FLAGS,image_left,pred_depth_left[0],saver_pair,checkpoint_pair)
+        #single_depth_training(label,FLAGS,image_left,pred_depth_left[0],saver_pair,checkpoint_pair)
 
 
 

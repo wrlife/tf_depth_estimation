@@ -125,7 +125,7 @@ def compute_loss_pairwise_depth(image_left, image_right,
 
         #Adaptively changing weights
         #import pdb;pdb.set_trace()
-        GT_proj_l2r = pose_vec2mat(gt_right_cam,'eular')
+        GT_proj_l2r = pose_vec2mat(gt_right_cam,'angleaxis')
         global_stepf = tf.to_float(global_step)
         depth_sig_weight = ease_out_quad(global_stepf, 0, FLAGS.depth_sig_weight, float(FLAGS.max_steps//3))
         #data_weight = ease_out_quad(global_stepf, 0, FLAGS.data_weight, float(FLAGS.max_steps//3))
@@ -136,8 +136,8 @@ def compute_loss_pairwise_depth(image_left, image_right,
         # proj_r2l = tf.cond(depth_weight_consist > 0, lambda: pose_vec2mat(pred_poses_left[:,0,:],'angleaxis'), lambda: tf.matrix_inverse(GT_proj_l2r))
         
         #import pdb;pdb.set_trace()
-        proj_l2r = pose_vec2mat(pred_poses_right[:,0,:],'eular')
-        proj_r2l = pose_vec2mat(pred_poses_left[:,0,:],'eular')
+        proj_l2r = pose_vec2mat(pred_poses_right[:,0,:],'angleaxis')
+        proj_r2l = pose_vec2mat(pred_poses_left[:,0,:],'angleaxis')
  
         # proj_l2r_loss = pose_vec2mat(pred_poses_right[:,0,:],'angleaxis')
         # proj_r2l_loss = pose_vec2mat(pred_poses_left[:,0,:],'angleaxis')
